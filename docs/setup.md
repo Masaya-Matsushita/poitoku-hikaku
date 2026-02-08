@@ -4,57 +4,54 @@
 
 ---
 
-## 1. Python環境の用意
+### プラグインの追加
 
-Crawl4AI（クローラー）はPython 3.10以上が必要です。
-
-### macOS（Homebrew）
+※ asdf でバージョン管理している前提
 
 ```bash
-# インストール
-brew install python@3.11
+# Python プラグイン追加
+asdf plugin add python
 
-# PATHを通す（zshの場合）
-echo 'export PATH="/opt/homebrew/opt/python@3.11/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
+# Node.js プラグイン追加
+asdf plugin add nodejs
+```
+
+### バージョンのインストール
+
+```bash
+cd /poitoku-hikaku
+
+# .tool-versions に定義されたバージョンをインストール
+asdf install
+
+# または個別にインストール
+asdf install nodejs 22.22.0
+asdf install python 3.13.12
 ```
 
 ### 確認
 
 ```bash
-python3 --version
-# 期待値: Python 3.11.x 以上
+# プロジェクトディレクトリで実行
+node --version
+# 期待値: v22.22.0
 
-pip3 --version
-# 期待値: pip 23.x 以上
+python --version
+# 期待値: Python 3.13.12
 ```
 
 ---
 
-## 2. Node.js環境の用意
-
-Next.js（フロントエンド）はNode.js 18以上が必要です。
-
-### macOS（Homebrew）
+## 2. pnpm のインストール
 
 ```bash
-# インストール
-brew install node@20
+# corepack で pnpm を有効化（Node.js に同梱）
+corepack enable
+corepack prepare pnpm@latest --activate
 
-# または nvm を使う場合
-brew install nvm
-nvm install 20
-nvm use 20
-```
-
-### 確認
-
-```bash
-node --version
-# 期待値: v20.x.x 以上
-
-npm --version
-# 期待値: 10.x.x 以上
+# 確認
+pnpm --version
+# 期待値: 9.x.x 以上
 ```
 
 ---
@@ -167,8 +164,7 @@ CREATE INDEX idx_offers_site_name ON offers(site_name);
 ### 手順
 
 ```bash
-# プロジェクトルートで実行
-cd /Users/masaya/dev/poitoku-hikaku
+cd /poitoku-hikaku
 
 # 環境変数ファイル作成
 cat << 'EOF' > .env.local
@@ -186,8 +182,6 @@ EOF
 ```bash
 # エディタで開いて、手順3, 4で取得した値に置き換える
 code .env.local  # VS Codeの場合
-# または
-nano .env.local
 ```
 
 ### .gitignoreの確認
@@ -198,7 +192,6 @@ nano .env.local
 # .gitignoreに追記（まだなければ）
 echo ".env.local" >> .gitignore
 echo ".env" >> .gitignore
-echo "*.env" >> .gitignore
 ```
 
 ---
@@ -222,14 +215,14 @@ echo "*.env" >> .gitignore
 ### 手順
 
 ```bash
-cd /Users/masaya/dev/poitoku-hikaku
+cd /poitoku-hikaku
 
 # クローラー用ディレクトリ作成
 mkdir -p crawler
 cd crawler
 
 # Python仮想環境作成
-python3 -m venv venv
+python -m venv venv
 source venv/bin/activate
 
 # Crawl4AIインストール
@@ -285,8 +278,9 @@ deactivate
 
 すべて完了したら、以下にチェックを入れてください：
 
-- [ ] Python 3.11+ インストール済み
-- [ ] Node.js 20+ インストール済み
+- [ ] asdf で Node.js 22.22.0 インストール済み
+- [ ] asdf で Python 3.13.12 インストール済み
+- [ ] pnpm インストール済み
 - [ ] OpenAI APIキー発行済み & 課金設定済み
 - [ ] Supabaseプロジェクト作成済み
 - [ ] Supabase offersテーブル作成済み
@@ -297,6 +291,20 @@ deactivate
 ---
 
 ## トラブルシューティング
+
+### asdf install でエラーが出る
+
+```bash
+# プラグインを最新化
+asdf plugin update --all
+
+# 依存関係のインストール（Python）
+# macOS の場合
+brew install openssl readline sqlite3 xz zlib tcl-tk
+
+# 再度インストール
+asdf install
+```
 
 ### Crawl4AIインストールでエラーが出る
 

@@ -23,7 +23,7 @@
 - キーワード検索による案件横断検索
 - 還元額の降順でのランキング表示
 - 各ポイントサイトへの遷移リンク
-- 対応サイト：§
+- 対応サイト：
   - [ハピタス](https://hapitas.jp/)
   - [モッピー](https://pc.moppy.jp/)
 
@@ -76,64 +76,79 @@
                               ▼
 ┌─────────────────────────────────────────────────────────┐
 │                   クローラー (Python)                     │
-│                                                          │
+│                                                         │
 │   ┌──────────────────────────────────────────────────┐  │
 │   │                    Crawl4AI                      │  │
 │   │                                                  │  │
-│   │  LLM抽出: HTML構造に依存せず意味ベースで抽出      │  │
-│   │  フォールバック: CSS抽出も可能                    │  │
+│   │  LLM抽出: HTML構造に依存せず意味ベースで抽出           │  │
+│   │  フォールバック: CSS抽出も可能                       │  │
 │   └──────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────┐
-│                   Supabase (PostgreSQL)                  │
-│                                                          │
-│   offers テーブル                                         │
+│                   Supabase (PostgreSQL)                 │
+│                                                         │
+│   offers テーブル                                        │
 │   ├── site_name, offer_name, reward                     │
 │   ├── url, category, fetched_at                         │
-│   └── (日付付きで履歴保存)                               │
+│   └── (日付付きで履歴保存)                                 │
 └─────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────┐
-│                    Next.js (Vercel)                      │
-│                                                          │
-│   ISR (Incremental Static Regeneration)                  │
-│   └── 1日1回 revalidate で最新データ反映                 │
+│                    Next.js (Vercel)                     │
+│                                                         │
+│   ISR (Incremental Static Regeneration)                 │
+│   └── 1日1回 revalidate で最新データ反映                   │
 └─────────────────────────────────────────────────────────┘
 ```
 
 ## プロジェクト構成
 
 ```
-poikatsu-app/
-├── src/                          # Next.js フロントエンド
+poitoku-hikaku/
+├── src/                          # Next.js フロントエンド（予定）
 │   ├── app/
 │   │   ├── page.tsx              # トップページ
 │   │   ├── search/
 │   │   │   └── page.tsx          # 検索結果ページ
-│   │   └── layout.tsx
+│   │   └── layout.tsx            # 共通レイアウト
 │   ├── components/
-│   └── lib/
+│   │   ├── SearchForm.tsx        # 検索フォーム
+│   │   └── OfferTable.tsx        # 結果テーブル
+│   ├── lib/
+│   │   └── supabase.ts           # Supabaseクライアント
+│   └── types/
+│       └── offer.ts              # 型定義
 │
 ├── crawler/                       # Python クローラー
-│   ├── main.py
+│   ├── main.py                   # エントリポイント
 │   ├── sites/
-│   │   ├── moppy.py
-│   │   └── hapitas.py
-│   └── requirements.txt
+│   │   ├── moppy.py              # モッピー用
+│   │   └── hapitas.py            # ハピタス用
+│   ├── schemas/
+│   │   └── offer.py              # LLM抽出スキーマ（Pydantic）
+│   └── requirements.txt          # Python依存関係
 │
 ├── .github/
 │   └── workflows/
-│       └── crawl.yml              # 日次クローリング
+│       └── crawl.yml             # 日次クローリング
 │
 ├── docs/                          # ドキュメント
-│   ├── requirements.md            # 要件定義
-│   ├── structure.md               # 技術構成
-│   ├── mvp.md                     # MVP計画
-│   └── competitor.md              # 競合分析
+│   ├── setup.md                  # 環境構築手順
+│   ├── requirements.md           # 要件定義
+│   ├── structure.md              # 技術構成・DB設計
+│   ├── mvp.md                    # MVP計画
+│   ├── competitor.md             # 競合分析
+│   ├── point-sites.md            # 対象ポイ活サイト一覧
+│   └── backlog.md                # バックログ・今後の検討事項
 │
+├── ai/                            # AI関連
+│   ├── plans/                     # 計画・設計ドキュメント
+│   └── prompts/                   # プロンプト集
+│
+├── AGENTS.md                      # AI Agent向けルール
 └── README.md
 ```
 
@@ -146,12 +161,24 @@ poikatsu-app/
 
 ## 開発
 
+### 事前準備
+
+開発を開始する前に、以下の準備が必要です：
+
+👉 **[事前準備ガイド](docs/setup.md)** を参照してください。
+
+- Python 3.11+ のインストール
+- Node.js 20+ のインストール
+- OpenAI APIキーの発行と課金設定
+- Supabaseプロジェクトの作成とテーブル作成
+- 環境変数ファイル（`.env.local`）の作成
+
 ### セットアップ
 
 ```bash
 # フロントエンド
-npm install
-npm run dev
+pnpm install
+pnpm run dev
 
 # クローラー
 cd crawler
@@ -176,7 +203,7 @@ OPENAI_API_KEY=your_openai_api_key
 
 詳細は `docs/` ディレクトリを参照：
 
-- [事前準備ガイド](docs/setup.md) ← **開発開始前に必読**
+- [事前準備ガイド](docs/setup.md)
 - [要件定義](docs/requirements.md)
 - [技術構成](docs/structure.md)
 - [MVP計画](docs/mvp.md)
@@ -192,18 +219,6 @@ OPENAI_API_KEY=your_openai_api_key
 4. **UI実装**: 検索フォーム + 結果テーブル
 5. **日次実行**: GitHub Actionsでcron設定
 6. **リリース**: 本番公開
-
-## 事前準備
-
-MVP開発を開始する前に、以下の準備が必要です：
-
-👉 **[事前準備ガイド](docs/setup.md)** を参照してください。
-
-- Python 3.11+ のインストール
-- Node.js 20+ のインストール
-- OpenAI APIキーの発行と課金設定
-- Supabaseプロジェクトの作成とテーブル作成
-- 環境変数ファイル（`.env.local`）の作成
 
 ## ライセンス
 
