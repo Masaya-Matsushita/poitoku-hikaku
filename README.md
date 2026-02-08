@@ -91,8 +91,8 @@
 │                                                         │
 │   offers テーブル                                        │
 │   ├── site_name, offer_name, reward                     │
-│   ├── url, category, fetched_at                         │
-│   └── (日付付きで履歴保存)                                 │
+│   ├── url, category, fetched_date                       │
+│   └── (日付単位で履歴保存)                                 │
 └─────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -167,8 +167,8 @@ poitoku-hikaku/
 
 👉 **[事前準備ガイド](docs/setup.md)** を参照してください。
 
-- Python 3.11+ のインストール
-- Node.js 20+ のインストール
+- Python 3.13+ のインストール
+- Node.js 24+ のインストール
 - OpenAI APIキーの発行と課金設定
 - Supabaseプロジェクトの作成とテーブル作成
 - 環境変数ファイル（`.env.local`）の作成
@@ -192,8 +192,8 @@ python main.py
 
 ```env
 # Supabase
-SUPABASE_URL=your_supabase_url
-SUPABASE_ANON_KEY=your_supabase_anon_key
+NEXT_PUBLIC_SUPABASE_URL=https://xxxxxxxx.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_xxxxxxxx...
 
 # OpenAI (Crawl4AI LLM抽出用)
 OPENAI_API_KEY=your_openai_api_key

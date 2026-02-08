@@ -99,14 +99,13 @@ Crawl4AI
 │   ├── site_name (VARCHAR)      -- ハピタス, モッピー          │
 │   ├── offer_name (VARCHAR)     -- 案件名                     │
 │   ├── reward (INTEGER)         -- 還元額（円）               │
-│   ├── original_reward (VARCHAR)-- 元表記（10,000pt等）       │
 │   ├── description (TEXT)       -- 案件詳細                   │
 │   ├── url (VARCHAR)            -- 案件ページURL              │
 │   ├── category (VARCHAR)       -- カテゴリ                   │
-│   ├── fetched_at (TIMESTAMP)   -- 取得日時                   │
+│   ├── fetched_date (DATE)      -- 取得日                     │
 │   └── created_at (TIMESTAMP)   -- 作成日時                   │
 │                                                              │
-│   ※ 日付付きで履歴保存 → 将来の傾向分析用                      │
+│   ※ 日付単位で履歴保存 → 将来の傾向分析用                      │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -125,34 +124,65 @@ Crawl4AI
 ### offers テーブル
 
 ```sql
+-- pg_trgm拡張を有効化（部分一致検索用）
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
 CREATE TABLE offers (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   site_name VARCHAR(50) NOT NULL,
   offer_name VARCHAR(255) NOT NULL,
   reward INTEGER NOT NULL,
-  original_reward VARCHAR(50),
   description TEXT,
   url VARCHAR(500) NOT NULL,
   category VARCHAR(100),
-  fetched_at TIMESTAMP WITH TIME ZONE NOT NULL,
+  fetched_date DATE NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
 
-  -- 同一案件の重複防止
-  UNIQUE(site_name, url, fetched_at::DATE)
+  -- 同一案件の重複防止（日付単位）
+  UNIQUE(site_name, url, fetched_date)
 );
 
--- 検索用インデックス
-CREATE INDEX idx_offers_offer_name ON offers(offer_name);
-CREATE INDEX idx_offers_fetched_at ON offers(fetched_at DESC);
+-- インデックス
+CREATE INDEX idx_offers_offer_name ON offers USING GIN (offer_name gin_trgm_ops);
+CREATE INDEX idx_offers_fetched_date ON offers(fetched_date DESC);
 CREATE INDEX idx_offers_site_name ON offers(site_name);
 ```
 
+### セキュリティ設定（RLS）
+
+**重要**: publishable key を公開する前に、必ずRLSを設定してください。
+
+```sql
+-- 1. RLSを有効化（CREATE TABLE後はデフォルトOFF）
+ALTER TABLE public.offers
+  ENABLE ROW LEVEL SECURITY;
+
+-- 2. publicロールからの全権限を剥奪
+REVOKE ALL ON public.offers FROM public;
+
+-- 3. SELECTポリシー：匿名ユーザーも全件取得可能（公開情報のため）
+CREATE POLICY offers_select_public
+  ON public.offers
+  FOR SELECT
+  TO public
+  USING (true);
+
+-- 4. INSERT/UPDATE/DELETEはポリシーなし
+-- クローラーはsecret keyを使用するため、RLSをバイパスして実行
+```
+
+**セキュリティ方針**:
+- 匿名ユーザー: SELECTのみ許可（検索機能のため）
+- クローラー: secret keyでINSERT/UPDATE/DELETEを実行（RLSバイパス）
+- データは公開情報のみ扱うため、匿名アクセスを許可しても問題なし
+
+**参考**: [Supabase RLS ガイド](https://supabase.com/docs/guides/database/postgres/row-level-security)
+
 ### 検索方式
 
-**MVP: ILIKE検索**
+**pg_trgm + ILIKE検索**
 
-Supabaseの無料枠では日本語全文検索（`to_tsvector('japanese', ...)`）は使えない。
-MVPでは ILIKE による部分一致検索で十分。案件数1000件程度なら性能問題なし。
+`pg_trgm` 拡張とGINインデックスを使用して、部分一致検索を高速化。
 
 ```typescript
 // 単一キーワード検索
@@ -172,7 +202,7 @@ const { data } = await query.order('reward', { ascending: false });
 ```
 
 **将来の拡張オプション**:
-- `pg_trgm` 拡張: 類似検索・タイポ許容（Supabase無料枠で利用可）
+- 類似検索・タイポ許容（`pg_trgm` の `similarity()` 関数）
 - Algolia / Meilisearch: 本格的な日本語検索（有料）
 
 ### TypeScript型定義
@@ -183,11 +213,10 @@ interface Offer {
   siteName: 'hapitas' | 'moppy';
   offerName: string;
   reward: number;           // 円換算
-  originalReward: string;   // "10,000pt" など
   description: string;
   url: string;
   category: string;
-  fetchedAt: Date;
+  fetchedDate: string;      // "2026-02-08" 形式
 }
 ```
 
