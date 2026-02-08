@@ -176,6 +176,7 @@ OPENAI_API_KEY=your_openai_api_key
 
 詳細は `docs/` ディレクトリを参照：
 
+- [事前準備ガイド](docs/setup.md) ← **開発開始前に必読**
 - [要件定義](docs/requirements.md)
 - [技術構成](docs/structure.md)
 - [MVP計画](docs/mvp.md)
@@ -191,6 +192,18 @@ OPENAI_API_KEY=your_openai_api_key
 4. **UI実装**: 検索フォーム + 結果テーブル
 5. **日次実行**: GitHub Actionsでcron設定
 6. **リリース**: 本番公開
+
+## 事前準備
+
+MVP開発を開始する前に、以下の準備が必要です：
+
+👉 **[事前準備ガイド](docs/setup.md)** を参照してください。
+
+- Python 3.11+ のインストール
+- Node.js 20+ のインストール
+- OpenAI APIキーの発行と課金設定
+- Supabaseプロジェクトの作成とテーブル作成
+- 環境変数ファイル（`.env.local`）の作成
 
 ## ライセンス
 
