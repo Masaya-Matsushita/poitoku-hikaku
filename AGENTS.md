@@ -1,81 +1,77 @@
-## Project Overview
+# AGENTS.md
 
-ポイ得比較 (Poitoku-Hikaku) - A Japanese web service for cross-searching and comparing point site (ポイ活サイト) offers. Users search by keyword to find which point site offers the best reward.
+このファイルはAI Agent（Claude Code, Cursor等）がセッション開始時に自動で読み込みます。
 
-**Current Phase**: PoC (Proof of Concept) - Validating Crawl4AI data extraction accuracy.
+---
 
-## Tech Stack
+## プロジェクト概要
 
-- **Frontend**: Next.js (App Router), TypeScript, Tailwind CSS, shadcn/ui
-- **Crawler**: Python with Crawl4AI (AI-powered scraping for HTML change resilience)
-- **Database**: Supabase (PostgreSQL)
-- **Hosting**: Vercel (ISR with daily revalidation)
-- **CI/CD**: GitHub Actions (daily crawling cron at 00:00 JST)
+**ポイ得比較** - ポイントサイト（ハピタス、モッピー等）の案件を横断検索・比較できるWebサービス
 
-## Development Commands
+| 項目 | 内容 |
+|------|------|
+| 現在のフェーズ | PoC（Crawl4AIの精度検証） |
+| 最重要方針 | メンテナンスを極力減らす |
+| 技術スタック | Next.js + Python (Crawl4AI) + Supabase |
 
-### Frontend (Next.js)
-```bash
-npm install
-npm run dev
-```
+---
 
-### Crawler (Python)
-```bash
-cd crawler
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-python main.py
-```
+## ドキュメント構成
 
-### PoC Testing
-```bash
-cd crawler
-source venv/bin/activate
-python poc/test_moppy.py      # Test Moppy extraction
-python poc/test_hapitas.py    # Test Hapitas extraction
-```
+必要に応じて参照してください。全部読む必要はありません。
 
-## Project Structure
+| ドキュメント | 内容 | 参照タイミング |
+|-------------|------|---------------|
+| `docs/setup.md` | 環境構築手順、環境変数 | 環境構築時 |
+| `docs/structure.md` | 技術構成、DB設計 | 実装時 |
+| `docs/requirements.md` | 要件定義 | 機能実装時 |
+| `docs/mvp.md` | MVP計画、フェーズ | 計画確認時 |
+| `docs/competitor.md` | 競合分析 | 方針確認時 |
+| `docs/point-sites.md` | ポイントサイト情報 | クローラー実装時 |
+| `docs/backlog.md` | 将来課題、会議メモ | 将来対応時 |
 
-```
-poitoku-hikaku/
-├── src/                    # Next.js frontend (planned)
-│   ├── app/               # App Router pages
-│   ├── components/        # UI components (SearchForm, OfferTable)
-│   └── lib/               # Supabase client, utilities
-├── crawler/               # Python crawler
-│   ├── main.py           # Entry point
-│   ├── sites/            # Site-specific crawlers (moppy.py, hapitas.py)
-│   └── schemas/          # Pydantic schemas for LLM extraction
-├── .github/workflows/    # GitHub Actions (crawl.yml)
-└── docs/                 # Documentation
-```
+---
 
-## Key Architecture Decisions
+## AI向けルール
 
-### Crawl4AI for Data Extraction
-The project uses Crawl4AI (LLM-based extraction) instead of traditional CSS selectors to minimize maintenance when target sites change their HTML structure. Fallback to CSS/XPath extraction is available.
+### 1. ドキュメント更新
 
-### Data Model
-The `offers` table stores: `site_name`, `offer_name`, `reward` (in yen), `original_reward`, `url`, `category`, `fetched_at`. Data is deduplicated by `(site_name, url, fetched_at::DATE)`.
+会話で得られた情報は適切なドキュメントに反映する。
 
-### Crawling Strategy
-- **Moppy**: Parse search result pages directly (`/search/?word=xxx`)
-- **Hapitas**: Crawl individual offer pages (`/item/detail/itemid/xxx/`) since search results require JS execution
+| 情報の種類 | 更新先 |
+|-----------|--------|
+| 技術的決定（DB設計など） | `docs/structure.md` |
+| 要件変更 | `docs/requirements.md` |
+| 競合情報 | `docs/competitor.md` |
+| 将来課題 | `docs/backlog.md` |
+| 計画変更 | `docs/mvp.md` |
+| プロジェクト概要変更 | `AGENTS.md` |
 
-## Environment Variables
+**更新後は必ずユーザーに報告する。**
 
-```env
-SUPABASE_URL=<supabase_url>
-SUPABASE_ANON_KEY=<supabase_anon_key>
-OPENAI_API_KEY=<openai_api_key>  # For Crawl4AI LLM extraction
-```
+### 2. コーディング規約
 
-## Constraints & Guidelines
+**共通**
+- 過度な抽象化を避け、シンプルに
+- コメントは日本語OK
 
-- **Minimize maintenance**: This is the top priority. Prefer solutions that are resilient to HTML changes.
-- **Crawling etiquette**: 3-second delay between requests, respect robots.txt, run once daily.
-- **Point conversion**: Both Moppy and Hapitas use 1pt = 1 yen. Other sites have different rates (see `docs/point-sites.md`).
-- **Error handling**: On crawl failure, retain previous data and display staleness indicator to users.
+**TypeScript（フロントエンド）**
+- App Router、shadcn/ui、Tailwind CSS
+- 型定義を省略しない
+
+**Python（クローラー）**
+- 型ヒント必須
+- Pydantic でスキーマ定義
+- リクエスト間隔3秒以上
+
+### 3. コミット
+
+- メッセージは日本語OK
+- 1コミット = 1論理変更
+- ドキュメント更新も含める
+
+### 4. プロジェクト固有の注意
+
+- ポイント換算: モッピー・ハピタスは 1pt = 1円
+- クローリング: robots.txt遵守、1日1回
+- エラー時: 古いデータを保持し、鮮度を表示
