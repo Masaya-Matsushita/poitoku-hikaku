@@ -142,9 +142,38 @@ CREATE TABLE offers (
 );
 
 -- 検索用インデックス
-CREATE INDEX idx_offers_offer_name ON offers USING gin(to_tsvector('japanese', offer_name));
+CREATE INDEX idx_offers_offer_name ON offers(offer_name);
 CREATE INDEX idx_offers_fetched_at ON offers(fetched_at DESC);
+CREATE INDEX idx_offers_site_name ON offers(site_name);
 ```
+
+### 検索方式
+
+**MVP: ILIKE検索**
+
+Supabaseの無料枠では日本語全文検索（`to_tsvector('japanese', ...)`）は使えない。
+MVPでは ILIKE による部分一致検索で十分。案件数1000件程度なら性能問題なし。
+
+```typescript
+// 単一キーワード検索
+const { data } = await supabase
+  .from('offers')
+  .select('*')
+  .ilike('offer_name', `%${keyword}%`)
+  .order('reward', { ascending: false });
+
+// スペース区切りの複数キーワード（AND検索）
+const keywords = searchQuery.split(/\s+/);
+let query = supabase.from('offers').select('*');
+for (const kw of keywords) {
+  query = query.ilike('offer_name', `%${kw}%`);
+}
+const { data } = await query.order('reward', { ascending: false });
+```
+
+**将来の拡張オプション**:
+- `pg_trgm` 拡張: 類似検索・タイポ許容（Supabase無料枠で利用可）
+- Algolia / Meilisearch: 本格的な日本語検索（有料）
 
 ### TypeScript型定義
 
