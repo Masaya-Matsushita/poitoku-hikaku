@@ -132,10 +132,29 @@ CREATE TABLE offers (
   UNIQUE(site_name, url, fetched_date)
 );
 
--- インデックス
+-- crawl_logsテーブル作成（クロール実行ログ）
+CREATE TABLE crawl_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  site_name VARCHAR(50) NOT NULL,
+  crawl_date DATE NOT NULL,
+  model_name VARCHAR(50),              -- 'gpt-4o-mini', 'ollama/llama3' 等
+  total_count INTEGER NOT NULL,        -- 取得試行件数
+  success_count INTEGER NOT NULL,      -- 抽出成功件数
+  error_count INTEGER NOT NULL,        -- エラー件数
+  duration_seconds INTEGER,            -- 所要時間
+  error_messages TEXT,                 -- エラー内容（JSON配列）
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+
+  UNIQUE(site_name, crawl_date)
+);
+
+-- インデックス（offers）
 CREATE INDEX idx_offers_offer_name ON offers USING GIN (offer_name gin_trgm_ops);
 CREATE INDEX idx_offers_fetched_date ON offers(fetched_date DESC);
 CREATE INDEX idx_offers_site_name ON offers(site_name);
+
+-- インデックス（crawl_logs）
+CREATE INDEX idx_crawl_logs_crawl_date ON crawl_logs(crawl_date DESC);
 ```
 
 4. 「Success. No rows returned」と表示されればOK
@@ -147,26 +166,36 @@ CREATE INDEX idx_offers_site_name ON offers(site_name);
 1. 同じSQL Editorで、以下のSQLを実行：
 
 ```sql
+-- ===================
+-- offersテーブルのRLS
+-- ===================
+
 -- 1. RLS（Row Level Security）を有効化
--- CREATE TABLE後はデフォルトでOFFなので、必ず有効化する
 ALTER TABLE public.offers
   ENABLE ROW LEVEL SECURITY;
 
--- 2. publicロール（匿名ユーザー）からの全権限を剥奪
--- これにより、RLSポリシー以外のアクセスをブロック
+-- 2. publicロールからの全権限を剥奪
 REVOKE ALL ON public.offers FROM public;
 
--- 3. SELECTポリシー：匿名ユーザーも全件取得可能
--- このプロジェクトは公開情報のみ扱うため、匿名アクセスを許可
+-- 3. SELECTポリシー：匿名ユーザーも全件取得可能（公開情報のため）
 CREATE POLICY offers_select_public
   ON public.offers
   FOR SELECT
   TO public
   USING (true);
 
--- 4. INSERT/UPDATE/DELETEはポリシーなし
--- クローラーはsecret keyを使用するため、RLSをバイパスして実行可能
--- 匿名ユーザーからの書き込みは自動的にブロックされる
+-- ===================
+-- crawl_logsテーブルのRLS
+-- ===================
+
+-- crawl_logsは内部用なので、匿名アクセス不可（secret keyのみ）
+ALTER TABLE public.crawl_logs
+  ENABLE ROW LEVEL SECURITY;
+
+REVOKE ALL ON public.crawl_logs FROM public;
+
+-- SELECTポリシーなし = 匿名ユーザーからは読み取り不可
+-- クローラーはsecret keyでRLSをバイパスして読み書き可能
 ```
 
 2. 「Success. No rows returned」と表示されればOK

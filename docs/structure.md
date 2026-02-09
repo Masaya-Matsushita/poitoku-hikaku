@@ -148,6 +148,34 @@ CREATE INDEX idx_offers_fetched_date ON offers(fetched_date DESC);
 CREATE INDEX idx_offers_site_name ON offers(site_name);
 ```
 
+### crawl_logs テーブル
+
+クロール実行のログを記録。成功率の監視、LLMモデル比較に使用。
+
+```sql
+CREATE TABLE crawl_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  site_name VARCHAR(50) NOT NULL,
+  crawl_date DATE NOT NULL,
+  model_name VARCHAR(50),              -- 'gpt-4o-mini', 'ollama/llama3' 等
+  total_count INTEGER NOT NULL,        -- 取得試行件数
+  success_count INTEGER NOT NULL,      -- 抽出成功件数
+  error_count INTEGER NOT NULL,        -- エラー件数
+  duration_seconds INTEGER,            -- 所要時間
+  error_messages TEXT,                 -- エラー内容（JSON配列）
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+
+  UNIQUE(site_name, crawl_date)
+);
+
+CREATE INDEX idx_crawl_logs_crawl_date ON crawl_logs(crawl_date DESC);
+```
+
+**用途**:
+- クロール成功率の監視（`success_count / total_count`）
+- LLMモデル切り替え時の比較（`model_name` で絞り込み）
+- パフォーマンス監視（`duration_seconds`）
+
 ### セキュリティ設定（RLS）
 
 **重要**: publishable key を公開する前に、必ずRLSを設定してください。
@@ -217,6 +245,18 @@ interface Offer {
   url: string;
   category: string;
   fetchedDate: string;      // "2026-02-08" 形式
+}
+
+interface CrawlLog {
+  id: string;
+  siteName: 'hapitas' | 'moppy';
+  crawlDate: string;        // "2026-02-08" 形式
+  modelName: string;        // "gpt-4o-mini" 等
+  totalCount: number;       // 取得試行件数
+  successCount: number;     // 抽出成功件数
+  errorCount: number;       // エラー件数
+  durationSeconds: number;  // 所要時間
+  errorMessages: string[];  // エラー内容
 }
 ```
 
