@@ -152,13 +152,6 @@ poitoku-hikaku/
 └── README.md
 ```
 
-## 紹介リンク
-
-| サイト | 紹介コード | 紹介URL |
-|--------|-----------|---------|
-| ハピタス | `IGVWXW` | https://hapitas.jp/appinvite?i=24798796&route=pcText |
-| モッピー | `6v5NA1ab` | https://pc.moppy.jp/entry/invite.php?invite=6v5NA1ab |
-
 ## 開発
 
 ### 事前準備
