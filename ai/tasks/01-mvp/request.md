@@ -1,6 +1,10 @@
-# MVP計画
+# MVP開発タスク
 
-## MVPの目的
+## 概要
+
+ポイ得比較のMVP（Minimum Viable Product）を開発する。
+
+## 目的
 
 **MVPの目的は「動く仕組みを作る」こと。収益化やプロダクト価値の検証ではない。**
 
@@ -13,11 +17,8 @@
 | 価値 | - | ユーザーに選ばれるサービス |
 
 **2サイト（モッピー・ハピタス）だけでプロダクト価値があるとは考えていない。**
-まず仕組みを作り、安定運用を確認してからサイト拡充・収益化フェーズに移行する。
 
----
-
-## MVPのスコープ
+## スコープ
 
 ### 含めるもの
 
@@ -29,7 +30,7 @@
 | 紹介リンク | 各サイトの紹介URL/コードを表示 |
 | 日次更新 | GitHub Actionsで毎日クローリング |
 
-### 含めないもの（将来対応）
+### 含めないもの
 
 | 機能 | 理由 |
 |------|------|
@@ -117,95 +118,9 @@ dokotoku.jp を参考にしたシンプルなUI
 
 | タスク | 詳細 |
 |--------|------|
-| ドメイン取得 | poitoku.jp など |
+| ドメイン取得 | poitoku-hikaku.com |
 | SEO対策 | メタタグ、sitemap.xml |
 | 運用開始 | 本番データ収集開始 |
-
-## PoC（Phase 0）の詳細計画
-
-### 検証項目
-
-#### 1. 数値抽出の精度
-
-```
-対象: モッピー検索結果ページ
-期待値: "10,000P" → 10000 として抽出
-検証方法: 同じページを10回取得して比較
-合格基準: 90%以上の一致
-```
-
-#### 2. LLM抽出 vs CSS抽出
-
-```
-比較項目:
-- 精度（どちらが正確か）
-- 速度（どちらが速いか）
-- コスト（LLM APIの費用）
-- 安定性（毎回同じ結果が出るか）
-```
-
-#### 3. コスト試算
-
-```
-想定:
-- 2サイト × 100案件 = 200リクエスト/日
-- gpt-4o-mini: $0.15/1M input tokens
-- 1ページ約2000トークンと仮定
-- 200 × 2000 = 400,000トークン/日
-- 月間: 12M トークン = 約$1.8/月
-```
-
-### PoCの実行手順
-
-```bash
-# 1. Python環境構築
-python -m venv venv
-source venv/bin/activate
-pip install crawl4ai
-
-# 2. モッピーでテスト
-python poc/test_moppy.py
-
-# 3. ハピタスでテスト
-python poc/test_hapitas.py
-
-# 4. 結果を分析
-python poc/analyze_results.py
-```
-
-### PoCコード（サンプル）
-
-```python
-# poc/test_moppy.py
-import asyncio
-from crawl4ai import AsyncWebCrawler
-from crawl4ai.extraction_strategy import LLMExtractionStrategy
-from pydantic import BaseModel
-
-class Offer(BaseModel):
-    name: str
-    reward: int  # ポイント数
-    url: str
-
-async def test_moppy():
-    url = "https://pc.moppy.jp/search/?word=楽天カード"
-
-    # LLM抽出戦略
-    strategy = LLMExtractionStrategy(
-        provider="openai/gpt-4o-mini",
-        schema=Offer.schema(),
-        instruction="案件名、ポイント数、URLを抽出してください"
-    )
-
-    async with AsyncWebCrawler() as crawler:
-        result = await crawler.arun(
-            url=url,
-            extraction_strategy=strategy
-        )
-        print(result.extracted_content)
-
-asyncio.run(test_moppy())
-```
 
 ## 成功基準
 
@@ -249,15 +164,3 @@ asyncio.run(test_moppy())
 | サイトのBot対策強化 | クローリング不可 | User-Agent調整、頻度低下 |
 | LLM APIコスト超過 | 費用増大 | 使用量監視、上限設定 |
 | サイトのHTML大幅変更 | データ取得不可 | LLM抽出で自動適応（期待） |
-
-## タイムライン（目安）
-
-| フェーズ | 期間 | 備考 |
-|---------|------|------|
-| Phase 0: PoC | 1-2日 | Crawl4AI検証 |
-| Phase 1: クローラー | 3-5日 | 2サイト対応 |
-| Phase 2: フロントエンド | 3-5日 | Next.js実装 |
-| Phase 3: インフラ | 1-2日 | デプロイ・自動化 |
-| Phase 4: リリース | 1日 | 本番公開 |
-
-**合計: 約2週間**（本業の合間で作業する場合は1ヶ月程度）
