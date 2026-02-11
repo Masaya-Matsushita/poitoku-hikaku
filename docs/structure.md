@@ -295,6 +295,55 @@ CRAWL_CONFIG = {
 }
 ```
 
+### エラーハンドリング（サーキットブレーカー）
+
+相手サーバーへの負荷軽減と、攻撃と誤認されないための設計。
+
+**HTTPステータス別の対応**:
+
+| ステータス | 意味 | 対応 |
+|-----------|------|------|
+| 429 | Too Many Requests（レート制限） | **即時中断** |
+| 403 | Forbidden（ブロック） | **即時中断** + アラート |
+| 5xx系 | サーバーエラー（502, 503等） | **連続3回で中断** |
+| 408 | Timeout | リトライ（最大3回） |
+
+**サーキットブレーカーの動作**:
+
+```
+正常 → エラー発生 → リトライ → 連続エラー(3回) → 中断（回路オープン）
+                                                    ↓
+                                              そのサイトはスキップ
+                                              他サイトは継続
+                                              翌日のcronで再試行
+```
+
+**設定値**:
+
+```python
+CIRCUIT_BREAKER_CONFIG = {
+    "immediate_stop_codes": [429, 403],     # 即時中断
+    "consecutive_stop_codes": [500, 502, 503, 504],  # 連続エラーで中断
+    "consecutive_threshold": 3,              # 連続エラー閾値
+    "retry_codes": [408],                    # リトライ対象
+    "max_retries": 3,                        # 最大リトライ回数
+}
+```
+
+**crawl_logsへの記録**:
+
+中断時は `error_messages` に理由を記録：
+
+```json
+{
+  "type": "circuit_breaker",
+  "code": 503,
+  "reason": "consecutive_errors",
+  "count": 3,
+  "last_url": "https://pc.moppy.jp/search/?word=xxx"
+}
+```
+
 ## ディレクトリ構成
 
 ```
