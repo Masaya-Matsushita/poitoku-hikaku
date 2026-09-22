@@ -58,6 +58,8 @@ type Summary struct {
 	// 以下は crawl_logs には入れないが報告に使う
 	CategoryCount int `json:"category_count"`
 	PageCount     int `json:"page_count"`
+	// TruncatedCategories は総件数（total_selector）より取れた件数が少なかったカテゴリ数（表示上限の取りこぼし）。
+	TruncatedCategories int `json:"truncated_categories"`
 }
 
 // Store は保存先の抽象。supabase.Client と DryRunStore が満たす。
@@ -159,63 +161,82 @@ func Run(ctx context.Context, def *site.Definition, f Fetcher, st Store, opts Op
 
 		seen := map[string]bool{}
 		for _, c := range cats {
-			for page := 1; page <= def.Listing.MaxPages; page++ {
-				u, err := def.RenderURL(c.params, page)
-				if err != nil {
-					addError("", err.Error())
-					break
-				}
-				if !allowed(rules, u) {
-					return &abort{reason: "robots_disallow", err: fmt.Errorf("%s は robots.txt で禁止", u)}
-				}
-				body, err := f.Get(ctx, u)
-				if err != nil {
-					var stop *fetch.StopError
-					if errors.As(err, &stop) {
-						return &abort{reason: stop.Reason, err: err}
+			// カテゴリ内で一意な URL 数。total_selector の総件数と比べて取りこぼしを検知する
+			catSeen := map[string]bool{}
+			total, hasTotal := 0, false
+			for _, tmpl := range def.Listing.Templates() {
+				for page := 1; page <= def.Listing.MaxPages; page++ {
+					u, err := def.RenderURL(tmpl, c.params, page)
+					if err != nil {
+						addError("", err.Error())
+						break
 					}
-					if ctx.Err() != nil {
-						return &abort{reason: "canceled", err: ctx.Err()}
+					if !allowed(rules, u) {
+						return &abort{reason: "robots_disallow", err: fmt.Errorf("%s は robots.txt で禁止", u)}
 					}
-					addError(u, err.Error())
-					break // このカテゴリの残りページは諦めて次へ
-				}
-				sum.PageCount++
-				doc, err := extract.Parse(body)
-				if err != nil {
-					addError(u, err.Error())
-					break
-				}
-				items, skipped, err := extract.Items(doc, def.Listing)
-				if err != nil {
-					return fmt.Errorf("crawl: %w", err)
-				}
-				if skipped > 0 {
-					addError(u, fmt.Sprintf("案件名か URL が取れない要素が %d 件", skipped))
-				}
-				if len(items) == 0 {
-					break
-				}
-				for _, it := range items {
-					o, err := toOffer(def, it, c.label)
+					body, err := f.Get(ctx, u)
+					if err != nil {
+						var stop *fetch.StopError
+						if errors.As(err, &stop) {
+							return &abort{reason: stop.Reason, err: err}
+						}
+						if ctx.Err() != nil {
+							return &abort{reason: "canceled", err: ctx.Err()}
+						}
+						addError(u, err.Error())
+						break // このテンプレートの残りページは諦めて次へ
+					}
+					sum.PageCount++
+					doc, err := extract.Parse(body)
 					if err != nil {
 						addError(u, err.Error())
-						continue
+						break
 					}
-					if seen[o.URL] {
-						continue
+					if !hasTotal {
+						if t, ok := extract.Total(doc, def.Listing); ok {
+							total, hasTotal = t, true
+						}
 					}
-					seen[o.URL] = true
-					offers = append(offers, o)
+					items, skipped, err := extract.Items(doc, def.Listing)
+					if err != nil {
+						return fmt.Errorf("crawl: %w", err)
+					}
+					if skipped > 0 {
+						addError(u, fmt.Sprintf("案件名か URL が取れない要素が %d 件", skipped))
+					}
+					if len(items) == 0 {
+						break
+					}
+					for _, it := range items {
+						o, err := toOffer(def, it, c.label)
+						if err != nil {
+							addError(u, err.Error())
+							continue
+						}
+						catSeen[o.URL] = true
+						if seen[o.URL] {
+							continue
+						}
+						seen[o.URL] = true
+						offers = append(offers, o)
+					}
+					if !site.IsPaged(tmpl) {
+						logf("%s: %d 件（累計 %d）", c.label, len(items), len(offers))
+						break
+					}
+					last, err := extract.LastPage(doc, def.Listing)
+					if err != nil {
+						return fmt.Errorf("crawl: %w", err)
+					}
+					logf("%s p%d/%d: %d 件（累計 %d）", c.label, page, last, len(items), len(offers))
+					if page >= last {
+						break
+					}
 				}
-				last, err := extract.LastPage(doc, def.Listing)
-				if err != nil {
-					return fmt.Errorf("crawl: %w", err)
-				}
-				logf("%s p%d/%d: %d 件（累計 %d）", c.label, page, last, len(items), len(offers))
-				if page >= last {
-					break
-				}
+			}
+			if hasTotal && total > len(catSeen) {
+				sum.TruncatedCategories++
+				logf("%s: 一覧で取れたのは %d 件、全 %d 件（表示上限による取りこぼし）", c.label, len(catSeen), total)
 			}
 		}
 		return nil
@@ -302,16 +323,18 @@ func checkRobots(def *site.Definition, rules *robots.Rules) error {
 		return &abort{reason: "robots_disallow", err: fmt.Errorf("%s は robots.txt で禁止", menu)}
 	}
 	// テンプレートのプレースホルダを仮の値で埋めてパスだけ検証する
-	sample := map[string]string{}
-	for _, name := range placeholders(def.Listing.URLTemplate) {
-		sample[name] = "1"
-	}
-	u, err := def.RenderURL(sample, 1)
-	if err != nil {
-		return err
-	}
-	if !allowed(rules, u) {
-		return &abort{reason: "robots_disallow", err: fmt.Errorf("%s は robots.txt で禁止", u)}
+	for _, tmpl := range def.Listing.Templates() {
+		sample := map[string]string{}
+		for _, name := range placeholders(tmpl) {
+			sample[name] = "1"
+		}
+		u, err := def.RenderURL(tmpl, sample, 1)
+		if err != nil {
+			return err
+		}
+		if !allowed(rules, u) {
+			return &abort{reason: "robots_disallow", err: fmt.Errorf("%s は robots.txt で禁止", u)}
+		}
 	}
 	return nil
 }
@@ -368,12 +391,13 @@ func discover(ctx context.Context, def *site.Definition, f Fetcher, rules *robot
 	}
 	var cats []category
 	seen := map[string]bool{}
+	pattern := def.ParamPattern()
 	for _, l := range links {
-		params, err := extract.QueryParams(l.Href)
+		params, err := extract.Params(l.Href, pattern)
 		if err != nil {
-			continue
+			continue // パターンに合わないリンクは一覧ではない
 		}
-		first, err := def.RenderURL(params, 1)
+		first, err := def.RenderURL(def.Listing.Templates()[0], params, 1)
 		if err != nil {
 			continue // テンプレートを埋められないリンクは一覧ではない
 		}

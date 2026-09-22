@@ -4,6 +4,7 @@ package extract
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -68,6 +69,10 @@ func Items(doc *html.Node, l site.Listing) (items []Item, skipped int, err error
 		if reward == "" && fallbackSel != nil {
 			// 還元額の要素が無い案件（ポイント対象外など）は代替要素の文言を還元額として記録する
 			reward = Text(cascadia.Query(n, fallbackSel))
+		}
+		if reward == "" {
+			// サイトが還元 0 の案件で要素自体を出さない場合の既定文言（未設定なら空のまま）
+			reward = l.RewardWhenEmpty
 		}
 		items = append(items, Item{
 			Name:      name,
@@ -154,14 +159,81 @@ func QueryParams(href string) (map[string]string, error) {
 	return out, nil
 }
 
-// Canonical は href を base で絶対 URL にし、url ルール（別名の統一・残すパラメータ）で正規化する。
-// フラグメントは落とし、クエリはキー順に並べる。
+// ErrNoParamMatch は discovery.param_pattern が href に一致しなかったことを表す。
+var ErrNoParamMatch = errors.New("extract: param_pattern に一致しない")
+
+// Params は href からテンプレート用のパラメータを取る。クエリパラメータに加え、pattern（名前付き
+// グループ）が与えられればその一致も入れる（同名ならこちらが優先）。pattern が一致しなければ ErrNoParamMatch。
+func Params(href string, pattern *regexp.Regexp) (map[string]string, error) {
+	params, err := QueryParams(href)
+	if err != nil {
+		return nil, err
+	}
+	if pattern == nil {
+		return params, nil
+	}
+	m := pattern.FindStringSubmatch(href)
+	if m == nil {
+		return nil, ErrNoParamMatch
+	}
+	for i, name := range pattern.SubexpNames() {
+		if name != "" && i < len(m) {
+			params[name] = m[i]
+		}
+	}
+	return params, nil
+}
+
+// Total は一覧ページのカテゴリ総件数を返す。total_selector が無い・読めない時は ok=false。
+func Total(doc *html.Node, l site.Listing) (total int, ok bool) {
+	if l.TotalSelector == "" {
+		return 0, false
+	}
+	sel, err := cascadia.Parse(l.TotalSelector)
+	if err != nil {
+		return 0, false
+	}
+	n := cascadia.Query(doc, sel)
+	if n == nil {
+		return 0, false
+	}
+	v := Text(n)
+	if l.TotalAttr != "" {
+		v = Attr(n, l.TotalAttr)
+	}
+	digits := strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return r
+		}
+		return -1
+	}, v)
+	if digits == "" {
+		return 0, false
+	}
+	total, err = strconv.Atoi(digits)
+	return total, err == nil
+}
+
+// Canonical は href を base で絶対 URL にし、url ルール（パスの末尾・別名の統一・残すパラメータ）で
+// 正規化する。フラグメントは落とし、クエリはキー順に並べる。
 func Canonical(href string, base *url.URL, r site.URLRules) (string, error) {
 	u, err := base.Parse(strings.TrimSpace(href))
 	if err != nil {
 		return "", fmt.Errorf("extract: URL %q を解決できない: %w", href, err)
 	}
 	u.Fragment = ""
+	if r.PathPattern != "" {
+		if re, err := regexp.Compile(r.PathPattern); err == nil {
+			if m := re.FindStringSubmatchIndex(u.Path); m != nil {
+				if r.PathTemplate != "" {
+					u.Path = string(re.ExpandString(nil, r.PathTemplate, u.Path, m))
+				} else if len(m) >= 4 && m[2] >= 0 {
+					u.Path = u.Path[m[2]:m[3]]
+				}
+				u.RawPath = ""
+			}
+		}
+	}
 	keep := map[string]bool{}
 	for _, k := range r.KeepParams {
 		keep[k] = true

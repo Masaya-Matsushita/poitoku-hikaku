@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -194,6 +195,185 @@ func TestCanonicalAndExternalID(t *testing.T) {
 		if id := ExternalID(got, re); id != c.id {
 			t.Errorf("ExternalID(%q) = %q, want %q", got, id, c.id)
 		}
+	}
+}
+
+func loadHapitas(t *testing.T) *site.Definition {
+	t.Helper()
+	d, err := site.LoadByID(filepath.Join("..", "..", "sites"), "hapitas")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
+func hapitasFixture(t *testing.T, name string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("..", "..", "testdata", "hapitas", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+func TestHapitasCreditListing(t *testing.T) {
+	d := loadHapitas(t)
+	doc, err := Parse(hapitasFixture(t, "category_credit.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, skipped, err := Items(doc, d.Listing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// #inner_catalog の 120 件だけ。ピックアップ枠（attention_word 等）は含めない
+	if len(items) != 120 || skipped != 0 {
+		t.Fatalf("items = %d, skipped = %d, want 120 / 0", len(items), skipped)
+	}
+	base, re := d.Base(), d.ExternalIDPattern()
+	for i, it := range items {
+		if it.Name == "" || it.Href == "" || it.RewardRaw == "" {
+			t.Errorf("items[%d] に空欄: %+v", i, it)
+		}
+		if r := ParseReward(it.RewardRaw); r.Points == nil {
+			t.Errorf("items[%d] の還元額 %q がポイントとして数値化できない", i, it.RewardRaw)
+		}
+		u, err := Canonical(it.Href, base, d.URL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(u, "/apn") || !strings.HasPrefix(u, "https://hapitas.jp/item/detail/itemid/") || !strings.HasSuffix(u, "/") {
+			t.Errorf("items[%d] の URL が正規化されていない: %s", i, u)
+		}
+		if ExternalID(u, re) == "" {
+			t.Errorf("items[%d] の external_id が取れない: %s", i, u)
+		}
+	}
+	if total, ok := Total(doc, d.Listing); !ok || total != 137 {
+		t.Errorf("Total = %d, %v, want 137", total, ok)
+	}
+	if last, _ := LastPage(doc, d.Listing); last != 1 {
+		t.Errorf("LastPage = %d, want 1（ページネーション無し）", last)
+	}
+}
+
+func TestHapitasShoppingListingHasPercentRewards(t *testing.T) {
+	d := loadHapitas(t)
+	doc, err := Parse(hapitasFixture(t, "category_shopping_store.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, _, err := Items(doc, d.Listing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) < 80 {
+		t.Fatalf("items = %d, want 80 以上", len(items))
+	}
+	percent, zero, points := 0, 0, 0
+	for _, it := range items {
+		r := ParseReward(it.RewardRaw)
+		switch {
+		case r.Percent != nil:
+			percent++
+		case r.Points != nil && *r.Points > 0:
+			points++
+		case r.Points != nil && *r.Points == 0:
+			// 還元 0 の案件は .caption が無く、reward_when_empty で「ポイント対象外」になる
+			zero++
+			u, err := Canonical(it.Href, d.Base(), d.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.HasPrefix(u, "https://hapitas.jp/item/detail/itemid/") {
+				t.Errorf("還元 0 の案件の URL が詳細 URL に寄っていない: %s → %s", it.Href, u)
+			}
+		default:
+			t.Errorf("数値化できない: %q (%s)", it.RewardRaw, it.Name)
+		}
+	}
+	if percent < 50 || zero < 20 || points == 0 {
+		t.Errorf("率表記 %d 件、固定額 %d 件、還元 0 %d 件（想定：50 / 5 / 25 前後）", percent, points, zero)
+	}
+	if total, ok := Total(doc, d.Listing); !ok || total != 81 {
+		t.Errorf("Total = %d, %v, want 81", total, ok)
+	}
+}
+
+func TestHapitasNavigationDiscovery(t *testing.T) {
+	d := loadHapitas(t)
+	doc, err := Parse(hapitasFixture(t, "category_credit.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	links, err := Links(doc, d.Discovery)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slugs := map[string]string{}
+	for _, l := range links {
+		params, err := Params(l.Href, d.ParamPattern())
+		if err != nil {
+			t.Errorf("%s: %v", l.Href, err)
+			continue
+		}
+		if params["slug"] == "" || l.Label == "" {
+			t.Errorf("slug かラベルが空: %+v params=%v", l, params)
+		}
+		slugs[params["slug"]] = l.Label
+	}
+	if len(slugs) != 39 {
+		t.Errorf("カテゴリ数 = %d, want 39", len(slugs))
+	}
+	if slugs["service_credit"] != "クレジットカード" {
+		t.Errorf("service_credit のラベル = %q", slugs["service_credit"])
+	}
+}
+
+func TestParamsWithPattern(t *testing.T) {
+	re := regexp.MustCompile(`/category/(?P<slug>[a-z_]+)/`)
+	params, err := Params("https://hapitas.jp/category/service_credit/apn/navigation_category/?x=1", re)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if params["slug"] != "service_credit" || params["x"] != "1" {
+		t.Errorf("params = %v", params)
+	}
+	if _, err := Params("https://hapitas.jp/special/", re); err != ErrNoParamMatch {
+		t.Errorf("一致しない href のエラー = %v", err)
+	}
+}
+
+func TestCanonicalPathPattern(t *testing.T) {
+	d := loadHapitas(t)
+	cases := []struct{ href, want string }{
+		{"https://hapitas.jp/item/detail/itemid/49829/apn/", "https://hapitas.jp/item/detail/itemid/49829/"},
+		{"/item/detail/itemid/1594/apn/service_credit_top", "https://hapitas.jp/item/detail/itemid/1594/"},
+		{"/item/detail/itemid/7/", "https://hapitas.jp/item/detail/itemid/7/"},
+		// 還元 0 の案件の遷移用 URL も同じ案件の詳細 URL に寄せる
+		{"/item/redirect-to-client-if-zero-point-item/itemid/93803/apn/", "https://hapitas.jp/item/detail/itemid/93803/"},
+		{"/special/x/", "https://hapitas.jp/special/x/"}, // パターンに合わなければそのまま
+	}
+	for _, c := range cases {
+		got, err := Canonical(c.href, d.Base(), d.URL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != c.want {
+			t.Errorf("Canonical(%q) = %q, want %q", c.href, got, c.want)
+		}
+	}
+}
+
+func TestCanonicalPathPatternWithoutTemplateKeepsFirstGroup(t *testing.T) {
+	base := loadHapitas(t).Base()
+	rules := site.URLRules{PathPattern: `^(/item/detail/itemid/[0-9]+/)`}
+	got, err := Canonical("/item/detail/itemid/5/apn/x", base, rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "https://hapitas.jp/item/detail/itemid/5/" {
+		t.Errorf("got %q", got)
 	}
 }
 

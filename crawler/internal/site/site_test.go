@@ -43,7 +43,11 @@ func TestMoppyRenderURL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := d.RenderURL(map[string]string{"parent_category": "3", "child_category": "43"}, 2)
+	tmpl := d.Listing.Templates()[0]
+	if !IsPaged(tmpl) {
+		t.Fatal("moppy のテンプレートは {page} を含む")
+	}
+	got, err := d.RenderURL(tmpl, map[string]string{"parent_category": "3", "child_category": "43"}, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +57,7 @@ func TestMoppyRenderURL(t *testing.T) {
 	}
 
 	// child_category が無いリンク（親のみ）は param_defaults で 0 になる
-	got, err = d.RenderURL(map[string]string{"parent_category": "2"}, 1)
+	got, err = d.RenderURL(tmpl, map[string]string{"parent_category": "2"}, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,8 +66,34 @@ func TestMoppyRenderURL(t *testing.T) {
 	}
 
 	// 解決できないプレースホルダはエラー
-	if _, err := d.RenderURL(map[string]string{}, 1); err == nil {
+	if _, err := d.RenderURL(tmpl, map[string]string{}, 1); err == nil {
 		t.Error("parent_category 未指定でエラーにならない")
+	}
+}
+
+func TestHapitasTemplatesAreUnpaged(t *testing.T) {
+	d, err := LoadByID(filepath.Join("..", "..", "sites"), "hapitas")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpls := d.Listing.Templates()
+	if len(tmpls) != 4 {
+		t.Fatalf("templates = %v, want 4 本（人気順・高ポイント順・新着順・高還元率順）", tmpls)
+	}
+	for _, tmpl := range tmpls {
+		if IsPaged(tmpl) {
+			t.Errorf("%q は {page} を含まない想定", tmpl)
+		}
+		got, err := d.RenderURL(tmpl, map[string]string{"slug": "service_credit"}, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasPrefix(got, "https://hapitas.jp/category/service_credit/") {
+			t.Errorf("RenderURL = %q", got)
+		}
+	}
+	if d.ParamPattern() == nil || d.PathPattern() == nil {
+		t.Error("param_pattern / path_pattern がコンパイルされていない")
 	}
 }
 
@@ -79,8 +109,10 @@ request_headers:
 discovery:
   url: ""
   link_selector: "a[["
+  param_pattern: "no-named-group"
 listing:
   url_template: "/list?x=1"
+  url_templates: ["/also"]
   max_pages: 0
   item_selector: ""
   name_selector: ".n"
@@ -89,6 +121,7 @@ listing:
   pagination_selector: ".p a"
   pagination_attr: ""
 url:
+  path_pattern: "no-group"
   external_id_regex: "id=(\\d+)-(\\d+)"
 `
 	if err := os.WriteFile(path, []byte(bad), 0o644); err != nil {
@@ -100,8 +133,8 @@ url:
 	}
 	for _, want := range []string{
 		"id は", "name が空", "base_url が不正", "User-Agent", "discovery.url が空",
-		"discovery.link_selector が不正", "{page}", "max_pages", "item_selector が空",
-		"pagination_attr が空", "キャプチャグループ",
+		"discovery.link_selector が不正", "名前付きグループ", "併用できない", "max_pages",
+		"item_selector が空", "pagination_attr が空", "path_pattern は", "キャプチャグループを 1 つ持つ",
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("エラーに %q が含まれない: %v", want, err)
