@@ -1,0 +1,9 @@
+User-Agent: *
+Allow: /auth/signin
+Disallow: /csenquetelight/
+Disallow: /index/ajax*
+Disallow: /profile/show/member/*
+Disallow: /auth/*
+Disallow: /item/redirect/*
+Disallow: /item/redirect-to-client-if-zero-point-item/*
+Sitemap: https://hapitas.jp/published-assets/auto-generated/sitemap/sitemap.xml
