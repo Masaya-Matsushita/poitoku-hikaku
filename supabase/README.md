@@ -23,19 +23,20 @@ Supabase（PostgreSQL）のスキーマを `migrations/` に置く。プロジ�
 
 ```
 PR で supabase/migrations/ を変更
-  → ci.yml「supabase dry-run」：supabase link → 本番に対して supabase db push --dry-run --include-all
+  → ci.yml「supabase dry-run」：本番に対して supabase db push --dry-run --include-all --db-url <セッションプーラー>
       → 適用予定の SQL を PR コメントに出す（push ごとに同じコメントを更新）
       → drop / alter ... type / truncate を含めば destructive-migration ラベルを付ける
 main にマージ
-  → deploy.yml「supabase db push」：supabase link → supabase db push --include-all で適用
+  → deploy.yml「supabase db push」：supabase db push --include-all --db-url <セッションプーラー> で適用
   → 成功したら「firebase hosting」：web/ をビルドして配信（DB が失敗したら配信しない）
 ```
 
-- CI では `db push` の前に必ず `supabase link --project-ref tbvzseiehzuobglwbedo` を実行する。GitHub Actions のランナーは IPv6 を持たず、DB への直接接続（IPv6 のみ）ができないため、link がプーラー（IPv4）経由の接続設定を作る。link 後の `db push` に `--project-ref` は不要
+- **CI は Management API（アクセストークン）を使わず、`--db-url` でセッションプーラーへ直接つなぐ。** 理由は 2 つ：GitHub Actions のランナーは IPv6 を持たず DB への直接接続（IPv6 のみ）ができない／`supabase link` はプロジェクト情報と API キー（`api-keys?reveal=true`）の取得を必ず行うため、スコープを絞ったアクセストークンでは権限エラーになる（2026-09-22 に発生）。プーラー（IPv4）は `--db-url` で指定すれば link 無しで使える
+- 接続先はワークフロー内で `postgresql://postgres.tbvzseiehzuobglwbedo:<encoded password>@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres` と組み立てる（Dashboard → Connect → Session pooler と同じ。ポート 5432 = セッションモード。マイグレーションはトランザクションモード 6543 では流さない）。パスワードは `jq '@uri'` で percent-encode し、その形もログからマスクする
 - 適用済みなら `db push` は「up to date」で何もしない（冪等）
 - `--include-all`：リモート履歴に無いファイルをタイムスタンプの新旧に関わらず適用する。並行する PR の順序が入れ替わっても取り残さないため
 - CLI のバージョンは `ci.yml` と `deploy.yml` で `2.117.0` に固定している。上げる時は両方を変える
-- 使う Secrets：`SUPABASE_ACCESS_TOKEN`（CLI 認証）、`SUPABASE_DB_PASSWORD`（DB パスワード）。名前は `AGENTS.md`
+- 使う Secret：`SUPABASE_DB_PASSWORD`（DB パスワード）のみ。`SUPABASE_ACCESS_TOKEN` は CI では使わない。名前は `AGENTS.md`
 - 履歴は `supabase_migrations.schema_migrations` に残る。初回スキーマ（`20260922000000_initial_schema.sql`）は 2026-09-22 にオーナーがローカル CLI（`supabase link` → `supabase db push`）で適用し、履歴も記録済み
 
 ### 破壊的マイグレーション（`destructive-migration` ラベル）
@@ -58,7 +59,7 @@ main にマージ
 
 ```sh
 brew install supabase/tap/supabase
-supabase login
+supabase login                                       # ローカルはフル権限のログインで link できる
 supabase link --project-ref tbvzseiehzuobglwbedo   # DB パスワードを聞かれる
 supabase db push --dry-run --include-all             # 適用予定の確認
 supabase migration list                              # ローカルと本番の履歴の突き合わせ

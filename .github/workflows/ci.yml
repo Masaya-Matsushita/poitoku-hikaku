@@ -113,13 +113,21 @@ jobs:
         with:
           version: 2.117.0 # deploy.yml と揃える
 
-      # スクリプト内で supabase link（プーラー経由の接続設定）→ db push --dry-run の順に実行する
-      - name: supabase link → db push --dry-run
+      # deploy.yml と同じく --db-url でセッションプーラー（IPv4）へ直接つなぐ。アクセストークンは使わない
+      - name: 接続文字列を組み立てる
+        if: steps.changed.outputs.changed == 'true'
+        env:
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_DB_USER: postgres.tbvzseiehzuobglwbedo
+          SUPABASE_DB_HOST: aws-0-ap-northeast-1.pooler.supabase.com
+        run: |
+          enc="$(jq -rn --arg p "$SUPABASE_DB_PASSWORD" '$p | @uri')"
+          echo "::add-mask::$enc"
+          echo "SUPABASE_DB_URL=postgresql://${SUPABASE_DB_USER}:${enc}@${SUPABASE_DB_HOST}:5432/postgres" >> "$GITHUB_ENV"
+
+      - name: supabase db push --dry-run
         if: steps.changed.outputs.changed == 'true'
         id: dryrun
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: .github/scripts/supabase-dry-run.sh tbvzseiehzuobglwbedo "$RUNNER_TEMP/supabase-dry-run"
 
       # dry-run が失敗しても、その内容をコメントで見せる（always）

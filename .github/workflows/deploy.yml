@@ -18,17 +18,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # PR の dry-run（ci.yml）と同じフラグで適用する。適用済みなら "up to date" で何もしない。
-  # 失敗したら hosting は動かない（スキーマが古いままフロントだけ更新しないため）
+  # PR の dry-run（ci.yml）と同じ接続・同じフラグで適用する。適用済みなら "up to date" で何もしない。
+  # 失敗したら hosting は動かない（スキーマが古いままフロントだけ更新しないため）。
+  # 接続は --db-url でセッションプーラー（IPv4）へ直接つなぐ。Management API（アクセストークン）は使わない：
+  # ランナーは IPv6 を持たず直接接続できず、link はスコープ付きトークンでは通らない（api-keys の閲覧が要る）ため
   supabase:
     name: supabase db push
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production
     env:
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-      SUPABASE_PROJECT_REF: tbvzseiehzuobglwbedo
+      # Dashboard → Connect → Session pooler と同じ値。リージョンや ref が変わったらここを直す
+      SUPABASE_DB_USER: postgres.tbvzseiehzuobglwbedo
+      SUPABASE_DB_HOST: aws-0-ap-northeast-1.pooler.supabase.com
     steps:
       - uses: actions/checkout@v7
 
@@ -36,16 +39,18 @@ jobs:
         with:
           version: 2.117.0 # ci.yml と揃える
 
-      # GitHub Actions のランナーは IPv6 を持たず、DB への直接接続（IPv6 のみ）ができない。
-      # link がプーラー（IPv4）経由の接続設定を作るので、db push の前に必ず実行する
-      - name: link（プーラー経由の接続設定）
-        run: supabase link --project-ref "$SUPABASE_PROJECT_REF" --yes
+      - name: 接続文字列を組み立てる
+        run: |
+          # パスワードは URL 用に percent-encode し、その形もログからマスクする
+          enc="$(jq -rn --arg p "$SUPABASE_DB_PASSWORD" '$p | @uri')"
+          echo "::add-mask::$enc"
+          echo "SUPABASE_DB_URL=postgresql://${SUPABASE_DB_USER}:${enc}@${SUPABASE_DB_HOST}:5432/postgres" >> "$GITHUB_ENV"
 
       - name: 適用予定を表示
-        run: supabase db push --dry-run --include-all --yes
+        run: supabase db push --dry-run --include-all --db-url "$SUPABASE_DB_URL" --yes
 
       - name: 適用
-        run: supabase db push --include-all --yes
+        run: supabase db push --include-all --db-url "$SUPABASE_DB_URL" --yes
 
   hosting:
     name: firebase hosting
