@@ -21,12 +21,38 @@ AI主導で開発・運用する実験プロジェクト。
 | `logs/` | 会議記録・事故記録 |
 | `reports/` | 自動生成レポート |
 
-## 予定ディレクトリ構成
+## ディレクトリ構成
 
 ```
-crawler/          Go クローラー
-  sites/*.yaml    サイトごとのセレクタ定義
-web/              React + Vite（静的生成）
-supabase/         マイグレーション
-.github/workflows daily-crawl / ci / deploy / weekly-backup
+crawler/              Go クローラー（go.mod はここ）
+  cmd/crawler/        エントリポイント
+  internal/policy/    加害防止の固定値（3秒間隔・429/403 停止・UA）とそのテスト
+  sites/*.yaml        サイトごとのセレクタ定義（次の PR で追加）
+web/                  React + Vite + TypeScript（静的生成。現在は仮ページ）
+supabase/
+  migrations/         スキーマ。適用手順は supabase/README.md
+.github/workflows/
+  ci.yml              PR と main：go test / vitest / lint
+  deploy.yml          main への push：Firebase Hosting へデプロイ
+  （daily-crawl / weekly-backup は今後追加）
+firebase.json         Hosting 設定（公開ディレクトリは web/dist）
+.tool-versions        Go / Node のバージョン固定（asdf）。CI もこれを読む
 ```
+
+## 開発環境
+
+```sh
+asdf plugin add golang && asdf plugin add nodejs
+asdf install                       # .tool-versions の Go / Node を入れる
+
+cd crawler && go test ./...        # クローラー
+cd web && npm ci && npm run lint && npm run typecheck && npm test && npm run build
+```
+
+## 本番環境
+
+| サービス | 識別子 | 備考 |
+|---|---|---|
+| Firebase Hosting | プロジェクト `poitoku-hikaku` | https://poitoku-hikaku.web.app |
+| Supabase | プロジェクト `tbvzseiehzuobglwbedo` | スキーマ適用は手動（`supabase/README.md`） |
+| GitHub Actions | このリポジトリ | Secrets 名は `AGENTS.md` |

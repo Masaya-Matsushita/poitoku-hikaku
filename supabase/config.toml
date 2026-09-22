@@ -1,0 +1,7 @@
+# Supabase CLI の設定。ローカルでは `supabase link --project-ref tbvzseiehzuobglwbedo` の後に
+# `supabase db push` でマイグレーションを適用する（supabase/README.md）。
+# ここに書く project_id はローカル環境の識別名で、リモートのプロジェクト参照ではない。
+project_id = "poitoku-hikaku"
+
+[db]
+major_version = 17
