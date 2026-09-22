@@ -8,9 +8,19 @@ Max Plan には1日あたりのクラウドスケジュールセッション数�
 | 名前 | 頻度 | 役割 | 自動マージ |
 |---|---|---|---|
 | `nightly-improve` | 毎日 03:00 JST | 前日のクロール結果とKPIを読み、最も効果の高い改善を1つ実施しPR | セレクタYAML・docsのみ可 |
-| `weekly-report` | 毎週月曜 | KPI推移・無料枠使用量・未マージPRの棚卸しを `reports/` に生成 | docsのみ |
+| `weekly-report` | 毎週月曜 | KPI推移・無料枠使用量・未マージPRの棚卸し・**Secrets の期限チェック**を `reports/` に生成 | docsのみ |
 
 （日次クロール自体は GitHub Actions cron。Routine ではない）
+
+## weekly-report の Secrets 期限チェック
+
+1. `docs/03-guardrails.md`「シークレットの期限」の表を読む
+2. 実行日から各 Secret の期限までの残り日数を計算する
+3. **残り 30 日を切った項目**を、その週の `reports/` に警告として書く。書くこと：Secret 名、期限、残り日数、切れると止まるもの、更新手順（新しい値を発行 → GitHub Secrets を更新 → 表の期限を書き直す PR）
+4. 期限切れで止まるのはマイグレーション適用（`deploy.yml` の supabase ジョブ）と、その後段の Hosting デプロイのみ。日次クロール（`crawl.yml`、`SUPABASE_SECRET_KEY`）は影響を受けない旨も警告に添える。オーナーが緊急度を判断できるようにするため
+5. 該当がなければ「Secrets の期限：問題なし（次の期限 YYYY-MM-DD）」と 1 行だけ書く
+
+Routine は Secrets の値を読めない（読まない）。期限は表に書かれた日付だけを信じる。
 
 ## nightly-improve のプロンプト骨子
 

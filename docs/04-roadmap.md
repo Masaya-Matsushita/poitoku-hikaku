@@ -15,10 +15,10 @@
 - [x] リポジトリ初期化、AGENTS.md、CI、Branch protection（2026-09-22。モノレポ雛形 `crawler/` `web/`、`ci.yml`。Branch protection は PR 必須＋required status checks `go` / `web`）
 - [x] Supabase スキーマ（`sites` / `offers` / `offer_snapshots` / `crawl_logs` / `current_offers`。`supabase/migrations/` に作成、設計意図は同ファイル冒頭）
 - [x] Supabase スキーマの本番適用（2026-09-22 にオーナーがローカル CLI で適用。以後は main マージ時に `deploy.yml` が自動適用し、PR では dry-run をコメント。`supabase/README.md`）
-- [ ] Go クローラー：モッピー（検索結果HTML）
+- [x] Go クローラー：モッピー（2026-09-22。検索結果ではなく、カテゴリメニューから発見した全カテゴリの一覧断片を巡回。`crawler/`）
 - [ ] Go クローラー：ハピタス（個別ページ `<title>`）
-- [ ] セレクタを YAML 定義に分離
-- [ ] GitHub Actions 日次 cron で本番稼働開始 ← **ここで時計が回り始める**
+- [x] セレクタを YAML 定義に分離（`crawler/sites/moppy.yaml`。フィクスチャでのテストが通れば自動マージ可）
+- [x] GitHub Actions 日次 cron で本番稼働開始 ← **ここで時計が回り始める**（`crawl.yml`、毎日 03:00 JST。マージ後の最初の実行から）
 - [ ] `crawl_logs` から KPI を日次レポート生成
 
 ## Phase 2：公開（データが貯まり始めた直後）

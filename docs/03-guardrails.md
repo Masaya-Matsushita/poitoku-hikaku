@@ -19,9 +19,9 @@
 
 | ガードレール | 実装 |
 |---|---|
-| リクエスト間隔 3秒以上 | コードで固定し、**テストで担保**（間隔を短くする変更はCIで落ちる） |
-| 1日1回 | GitHub Actions の cron のみから起動。手動起動はオーナーのみ |
-| robots.txt 遵守 | クローラー起動時に取得・検証 |
+| リクエスト間隔 3秒以上 | `crawler/internal/policy` の定数で固定し、**テストで担保**（間隔を短くする変更はCIで落ちる） |
+| 1日1回 | `crawl.yml` の cron（03:00 JST）のみから起動。cron が 1 本で日次であることも policy のテストが検証する。手動起動（workflow_dispatch）はオーナーのみ |
+| robots.txt 遵守 | クローラー起動時に取得し、メニューと一覧の URL が許可されているか検証。禁止なら `robots_disallow` で打ち切る |
 | サーキットブレーカー | 429/403 で即停止、5xx 連続3回で停止 |
 | User-Agent に連絡先明記 | `poitoku-hikaku/1.0 (+https://poitoku-hikaku.com/about)` |
 
@@ -32,6 +32,20 @@
 | 支払い手段を登録しない | Firebase Spark、Supabase Free、GitHub Free。請求アカウント自体を作らない |
 | 無料枠監視 | 週次 Routine が各サービスの使用量を確認し `reports/` に記録 |
 | 有料LLM API キーを持たない | リポジトリにも Secrets にも置かない |
+
+### シークレットの期限
+
+週次 Routine（`docs/05-routines.md` の weekly-report）がこの表を読み、**残り 30 日を切った項目を `reports/` に警告として出す**。
+期限切れで止まるのは **マイグレーション適用（`deploy.yml` の supabase ジョブ）と、その後段の Hosting デプロイ**のみ。
+日次クロール（`crawl.yml`）は `SUPABASE_SECRET_KEY` を使うので影響を受けない。更新したら期限をこの表に書き直す。
+
+| Secret | 使う場所 | 期限 | 切れると止まるもの |
+|---|---|---|---|
+| `SUPABASE_ACCESS_TOKEN` | `deploy.yml`（db push）、`ci.yml`（dry-run） | **2027-09-21** | マイグレーション適用 → その後段の Hosting デプロイ |
+| `SUPABASE_DB_PASSWORD` | 同上 | 無期限（DB パスワード変更時に更新） | 同上 |
+| `SUPABASE_URL` | `crawl.yml` | 無期限 | — |
+| `SUPABASE_SECRET_KEY` | `crawl.yml` | 無期限（ローテーション時に更新） | 日次クロール |
+| `FIREBASE_SERVICE_ACCOUNT` | `deploy.yml`（hosting） | 無期限（鍵を失効させない限り） | Hosting デプロイ |
 
 ### データ
 
