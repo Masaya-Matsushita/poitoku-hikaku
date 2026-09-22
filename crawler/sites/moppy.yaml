@@ -1,0 +1,45 @@
+# モッピー（pc.moppy.jp）のクロール定義。2026-09-22 に実 HTML で検証した。
+# 抽出は CSS セレクタ、定義はこの YAML に分離する（ADR-0003）。
+# リクエスト間隔・停止条件・User-Agent は crawler/internal/policy が持ち、ここでは変えられない。
+#
+# 仕組み：
+#   1. カテゴリメニュー（AJAX 断片 get_menu.php）から「広告ジャンルで探す」の親子カテゴリを発見する
+#      （2026-09 時点で 93 件。目的別カテゴリはジャンルと重複するので対象外）
+#   2. 各カテゴリの一覧断片（get_list.php）をページ送りで取得する。30 件/ページ。
+#      最終ページ番号は .a-pagination__list a の current 属性の最大値。0 件のページで打ち切る
+#   3. 案件は .m-list__item。案件名・還元額・詳細 URL を取り、URL は site_id だけ残して正規化する
+#      （詳細 URL は /ad/detail.php?site_id=N または /shopping/detail.php?site_id=N。
+#       特集枠では s_id=N と書かれることがあり、同じ ID なので site_id に寄せる）
+#   4. get_list.php は X-Requested-With ヘッダが無いと空応答を返す（ページ側の jQuery と同じ挙動にする）
+#
+# 保存するのは案件名・還元額・URL・カテゴリのみ（AGENTS.md）。
+id: moppy
+name: モッピー
+base_url: https://pc.moppy.jp
+
+request_headers:
+  X-Requested-With: XMLHttpRequest
+
+discovery:
+  url: /ajax/category/get_menu.php
+  link_selector: 'a[href*="/category/list.php?parent_category="]'
+  label_attr: data-ga-label
+  label_trim_prefix: "広告ジャンルで探す - "
+
+listing:
+  url_template: "/ajax/category/get_list.php?parent_category={parent_category}&child_category={child_category}&objective_category=0&current_page={page}&af_sorter=1&exclude_purchased="
+  param_defaults:
+    child_category: "0"
+  max_pages: 50
+  item_selector: .o-list--portrait .m-list__item
+  name_selector: .a-list__item__title
+  reward_selector: .a-list__item__point
+  link_selector: a.block__link
+  pagination_selector: .a-pagination__list a
+  pagination_attr: current
+
+url:
+  keep_params: [site_id]
+  rename_params:
+    s_id: site_id
+  external_id_regex: 'site_id=(\d+)'
