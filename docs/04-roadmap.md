@@ -12,8 +12,9 @@
 
 ## Phase 1：データパイプライン（最優先、目標：着手から1週間で本番稼働）
 
-- [ ] リポジトリ初期化、AGENTS.md、CI、Branch protection
-- [ ] Supabase スキーマ（`offers` / `crawl_logs` / `sites`。SPEC.md 旧版のDDLをベースに、履歴・正規化を見据えて拡張）
+- [x] リポジトリ初期化、AGENTS.md、CI、Branch protection（2026-09-22。モノレポ雛形 `crawler/` `web/`、`ci.yml`。Branch protection は PR 必須のみ設定済みで、required status checks（`go` / `web`）は CI 初回通過後に追加）
+- [x] Supabase スキーマ（`sites` / `offers` / `offer_snapshots` / `crawl_logs` / `current_offers`。`supabase/migrations/` に作成、設計意図は同ファイル冒頭）
+- [ ] Supabase スキーマの本番適用（オーナーが手動。手順は `supabase/README.md`）
 - [ ] Go クローラー：モッピー（検索結果HTML）
 - [ ] Go クローラー：ハピタス（個別ページ `<title>`）
 - [ ] セレクタを YAML 定義に分離
@@ -22,8 +23,8 @@
 
 ## Phase 2：公開（データが貯まり始めた直後）
 
-- [ ] React（Vite）＋ 静的生成：トップ検索、`/offers/{slug}`
-- [ ] Firebase Hosting デプロイ（GitHub Actions から）
+- [ ] React（Vite）＋ 静的生成：トップ検索、`/offers/{slug}`（雛形と仮ページは Phase 1 で作成済み。仮ページは `noindex`）
+- [x] Firebase Hosting デプロイ（GitHub Actions から）（`deploy.yml`。Phase 1 で先行作成、main への push のみで起動）
 - [ ] sitemap.xml、構造化データ、`llms.txt`
 - [ ] Search Console 連携
 - [ ] ASP（A8.net / afb / アクセストレード）メディア登録・提携申請
