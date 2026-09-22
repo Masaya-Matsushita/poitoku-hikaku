@@ -33,7 +33,7 @@ crawler/              Go クローラー（go.mod はここ）
   internal/extract/   CSS セレクタでの抽出、還元額の数値化、URL の正規化
   internal/crawl/     robots 検証 → カテゴリ発見 → ページ送り → 保存 → crawl_logs の組み立て
   internal/supabase/  PostgREST での書き込み（offers upsert / offer_snapshots / crawl_logs）
-  sites/*.yaml        サイトごとのセレクタ定義（moppy）
+  sites/*.yaml        サイトごとのセレクタ定義（moppy, hapitas）
   testdata/           パーサーテスト用の HTML フィクスチャ（ネットワークなしでテストが動く）
 web/                  React + Vite + TypeScript（静的生成。現在は仮ページ）
 supabase/

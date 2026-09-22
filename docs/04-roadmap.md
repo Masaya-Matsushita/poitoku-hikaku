@@ -16,7 +16,7 @@
 - [x] Supabase スキーマ（`sites` / `offers` / `offer_snapshots` / `crawl_logs` / `current_offers`。`supabase/migrations/` に作成、設計意図は同ファイル冒頭）
 - [x] Supabase スキーマの本番適用（2026-09-22 にオーナーがローカル CLI で適用。以後は main マージ時に `deploy.yml` が自動適用し、PR では dry-run をコメント。`supabase/README.md`）
 - [x] Go クローラー：モッピー（2026-09-22。検索結果ではなく、カテゴリメニューから発見した全カテゴリの一覧断片を巡回。`crawler/`）
-- [ ] Go クローラー：ハピタス（個別ページ `<title>`）
+- [x] Go クローラー：ハピタス（2026-09-23。個別ページではなくカテゴリページ 39 件を人気順・高ポイント順の 2 通りで巡回。`crawler/sites/hapitas.yaml`）
 - [x] セレクタを YAML 定義に分離（`crawler/sites/moppy.yaml`。フィクスチャでのテストが通れば自動マージ可）
 - [x] GitHub Actions 日次 cron で本番稼働開始 ← **ここで時計が回り始める**（`crawl.yml`、毎日 03:00 JST。マージ後の最初の実行から）
 - [ ] `crawl_logs` から KPI を日次レポート生成
