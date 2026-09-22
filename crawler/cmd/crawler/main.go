@@ -100,7 +100,8 @@ func defaultVersion(getenv func(string) string) string {
 	return "dev"
 }
 
-// printSample は dry-run 時に先頭数件を表示する（保存内容の目視確認用）。
+// printSample は dry-run 時に先頭数件と、還元額を数値化できなかった案件を表示する
+// （保存内容の目視確認と、セレクタ・数値化ルールの修復のため）。
 func printSample(w io.Writer, offers []crawl.Offer) {
 	crawl.SortOffers(offers)
 	n := min(5, len(offers))
@@ -108,5 +109,17 @@ func printSample(w io.Writer, offers []crawl.Offer) {
 	for _, o := range offers[:n] {
 		b, _ := json.Marshal(o)
 		fmt.Fprintln(w, string(b))
+	}
+
+	var unparsed []crawl.Offer
+	for _, o := range offers {
+		if o.RewardPoints == nil && o.RewardPercent == nil {
+			unparsed = append(unparsed, o)
+		}
+	}
+	m := min(20, len(unparsed))
+	fmt.Fprintf(w, "--- unparsed reward %d/%d (showing %d) ---\n", len(unparsed), len(offers), m)
+	for _, o := range unparsed[:m] {
+		fmt.Fprintf(w, "%q\t%s\t%s\n", o.RewardRaw, o.URL, o.Name)
 	}
 }
