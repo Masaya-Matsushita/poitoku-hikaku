@@ -1,6 +1,24 @@
-# env
+# env / secrets（AGENTS.md：AI は読まない・書かない）
 .env
 .env.local
 .env.*
-
 secrets/
+
+# node / vite
+node_modules/
+web/dist/
+coverage/
+
+# go
+crawler/bin/
+
+# firebase cli
+.firebase/
+firebase-debug.log
+
+# supabase cli（link 時に生成される）
+supabase/.temp/
+supabase/.branches/
+
+# os / editor
+.DS_Store
