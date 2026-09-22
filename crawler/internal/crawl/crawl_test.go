@@ -98,11 +98,83 @@ const smallMenu = `<ul>
 
 func listURL(t *testing.T, d *site.Definition, parent, child string, page int) string {
 	t.Helper()
-	u, err := d.RenderURL(map[string]string{"parent_category": parent, "child_category": child}, page)
+	u, err := d.RenderURL(d.Listing.Templates()[0], map[string]string{"parent_category": parent, "child_category": child}, page)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return u
+}
+
+// ハピタス型：ページ送り無しのテンプレート 2 本（並び順違い）、パスからのパラメータ抽出、
+// 総件数との比較による取りこぼしの検知。
+func TestRunUnpagedMultiTemplateAndTruncation(t *testing.T) {
+	d, err := site.LoadByID(filepath.Join("..", "..", "sites"), "hapitas")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hfixture := func(name string) []byte {
+		b, err := os.ReadFile(filepath.Join("..", "..", "testdata", "hapitas", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	menu := `<nav>
+<a class="menu_item_link" href="https://hapitas.jp/category/service_credit/apn/navigation_category/"><div class="menu_item_link_content">クレジットカード</div></a>
+<a class="menu_item_link" href="https://hapitas.jp/category/shopping_store/apn/navigation_category/"><div class="menu_item_link_content">総合通販</div></a>
+<a class="menu_item_link" href="https://hapitas.jp/special/">スペシャル</a>
+</nav>`
+	// 本番の discovery.url はカテゴリページ（実ナビに 39 件）なので、テスト用に 2 件だけのメニューへ差し替える
+	d.Discovery.URL = "/test-nav/"
+	f := &fakeFetcher{responses: map[string]fakeResponse{
+		"https://hapitas.jp/robots.txt": {body: hfixture("robots.txt")},
+		"https://hapitas.jp/test-nav/":  {body: []byte(menu)},
+	}}
+	// 並び順違いのテンプレートすべてに同じページを返す：
+	//   クレジットカード：どの並び順も同じ 120 件 → 全 137 件に届かず「取りこぼし」
+	//   総合通販：81 件がすべてに出る → 取りこぼし無し
+	templates := d.Listing.Templates()
+	for slug, fx := range map[string]string{"service_credit": "category_credit.html", "shopping_store": "category_shopping_store.html"} {
+		for _, tmpl := range templates {
+			u, err := d.RenderURL(tmpl, map[string]string{"slug": slug}, 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.responses[u] = fakeResponse{body: hfixture(fx)}
+		}
+	}
+
+	st := &fakeStore{}
+	res, err := Run(context.Background(), d, f, st, Options{Now: fixedNow()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := res.Summary
+	if s.Status != "success" {
+		t.Errorf("Status = %s, Errors = %v", s.Status, s.Errors)
+	}
+	if s.CategoryCount != 2 {
+		t.Errorf("CategoryCount = %d（/special/ は param_pattern に合わないので除外）", s.CategoryCount)
+	}
+	// robots + discovery + 2 カテゴリ × テンプレート数
+	if want := 2 + 2*len(templates); s.RequestCount != want {
+		t.Errorf("RequestCount = %d, want %d, calls = %v", s.RequestCount, want, f.calls)
+	}
+	if s.TruncatedCategories != 1 {
+		t.Errorf("TruncatedCategories = %d, want 1（クレジットカード 120 < 137）", s.TruncatedCategories)
+	}
+	// 還元 0 の案件も「ポイント対象外」→ 0 ポイントとして数値化されるので、全件が parsed になる
+	if s.OfferCount < 200 || s.OfferCount != s.ParsedCount {
+		t.Errorf("OfferCount = %d, ParsedCount = %d", s.OfferCount, s.ParsedCount)
+	}
+	for _, o := range st.saved {
+		if strings.Contains(o.URL, "/apn") || strings.Contains(o.URL, "redirect") || o.ExternalID == "" {
+			t.Errorf("URL 正規化か external_id に問題: %+v", o)
+		}
+	}
+	if st.saved[0].Category != "クレジットカード" {
+		t.Errorf("Category = %q", st.saved[0].Category)
+	}
 }
 
 func fixedNow() func() time.Time {

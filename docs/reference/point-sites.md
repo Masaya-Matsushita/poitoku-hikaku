@@ -79,74 +79,40 @@ Sitemap: https://pc.moppy.jp/sitemap.xml
 | 紹介報酬（紹介者） | 最大300pt + 紹介相手の獲得ポイントの1%〜40% |
 | 紹介報酬（被紹介者） | 最大2,700pt（キャンペーン期間中） |
 
-#### クローリング情報
+#### クローリング情報（2026-09-23 再検証。実装は `crawler/sites/hapitas.yaml`）
 
 | 項目 | 内容 |
 |------|------|
-| 取得方法 | 個別案件ページのメタデータをパース |
-| 対象URL | `https://hapitas.jp/item/detail/itemid/{itemid}/` |
-| データ埋め込み | ✅ `<title>` や `og:title` にポイント情報 |
-| JS実行 | 不要（検索結果はJS必要だが、個別ページは不要） |
-| ポイント要素 | `<title>案件名 \| 10,000pt還元中 \| ...</title>` |
+| 取得方法 | カテゴリページ（サーバー側描画）をパース。個別ページは巡回しない（2026-02 の案は不要になった） |
+| カテゴリ発見 | カテゴリページのヘッダーナビ `a.menu_item_link` から `/category/<slug>/` を 39 件（サイトマップの `sitemap-category.xml.gz` の 40 件から `newest` を除いた集合と同じ） |
+| 一覧取得 | `/category/<slug>/`（人気順）と `/category/<slug>/itemtype/newest/sort/<point|registdate|low_rate_point>/`（高ポイント順・新着順・高還元率順）。1 ページ最大 120 件（サイトの limit）。総件数は `#total_item_count[value]` |
+| 「もっと見る」 | JS が `/item/ajaxcategoryitems` を呼ぶ仕組み。直接呼ぶと数回で 404 を返すようになったため**使わない**。並び順 4 種の和集合で最大 480 件/カテゴリを網羅する。ジャンル系は最大 333 件（2026-09）なのでほぼ全件、横断系（すぐ獲得 671 件、アプリ 634 件、ポイントアップ中 612 件、無料獲得 602 件）は上位のみ。総件数に届かないカテゴリは crawl 実行ログに「表示上限による取りこぼし」と出る |
+| JS実行 | 不要 |
+| 案件要素 | `#inner_catalog .item_slots_thumb > a.thumb_slots_link[href]`、案件名 `p.store`、還元額 `p.caption`（"1,100pt" または "1%"）。ピックアップ枠（`/apn/attention_word` 等）は `#inner_catalog` の外なので対象外 |
+| 詳細URL | `https://hapitas.jp/item/detail/itemid/N/apn/...`。末尾の `/apn/...` は追跡用なので落として `/item/detail/itemid/N/` に正規化 |
+| 還元 0 の案件 | Amazon の特集枠など（総合通販 82 件中 25 件）。`.caption` が無く、リンク先が `/item/redirect-to-client-if-zero-point-item/itemid/N/apn/`（robots.txt で禁止の遷移用 URL。取得しない）。URL は同じ itemid の詳細 URL に寄せ、還元額は「ポイント対象外」（0 ポイント）として記録 |
+| 並び順 | 人気順 recommend / 新着順 registdate / 高ポイント順 point / 高還元率順 low_rate_point（昇順は無い） |
 
-#### robots.txt
+#### robots.txt（2026-09-23 取得。`crawler/testdata/hapitas/robots.txt`）
 
 ```
 User-Agent: *
 Allow: /auth/signin
+Disallow: /csenquetelight/
+Disallow: /index/ajax*
+Disallow: /profile/show/member/*
+Disallow: /auth/*
 Disallow: /item/redirect/*
 Disallow: /item/redirect-to-client-if-zero-point-item/*
-
-# /item/detail/ は許可
+Sitemap: https://hapitas.jp/published-assets/auto-generated/sitemap/sitemap.xml
 ```
 
-**判定**: ✅ クローリング可能
+**判定**: ✅ クローリング可能（`/category/*` と `/item/detail/*` は許可。`/index/ajax*` は禁止なので触らない。クローラーが起動時に取得・検証する）
 
-#### 注意事項
+#### 2026-02 の調査メモからの変更点
 
-- 検索結果ページ（`/item/freeword/`）はJSで動的ロードのため、個別案件ページからデータ取得
-- 案件一覧（カテゴリページ等）から `itemid` を収集し、個別ページを巡回する方式
-
-#### itemid収集方法（詳細）
-
-ハピタスの検索結果はJS動的ロードのため、以下の方式で案件を収集する。
-
-**方式1: サイトマップからitemid一覧を取得（推奨）**
-```
-https://hapitas.jp/published-assets/auto-generated/sitemap/sitemap.xml
-    ↓
-サイトマップ内の /item/detail/itemid/xxx/ を抽出
-    ↓
-各itemidの個別ページを巡回
-```
-
-**方式2: カテゴリページを巡回**
-```
-https://hapitas.jp/category/service_credit/  （クレジットカード）
-https://hapitas.jp/category/shopping_store/  （ショッピング）
-    ↓
-ページ内の itemid リンクを抽出
-    ↓
-各itemidの個別ページを巡回
-```
-
-**方式3: 人気案件・ランキングページから取得（MVP推奨）**
-```
-トップページや特集ページの案件リンクを収集
-    ↓
-主要案件のitemidのみ取得（全件ではなく上位100件程度）
-```
-
-**MVP方針**:
-- 方式3（人気案件のみ）で開始し、主要100案件程度を対象
-- 全案件網羅は将来対応（方式1が理想だがリクエスト数が多い）
-
-**リクエスト数の見積もり**:
-| 方式 | 対象案件数 | リクエスト数/日 | 所要時間（3秒間隔） |
-|------|-----------|----------------|-------------------|
-| 方式3（MVP） | 100件 | 100 | 約5分 |
-| 方式2 | 500件 | 500 | 約25分 |
-| 方式1 | 全件（数千） | 数千 | 数時間 |
+- 「個別ページの `<title>` から還元額を取る」方式は不要。カテゴリページに案件名・還元額・URL が揃っている
+- 「主要 100 案件のみ」の MVP 方針は撤回。全 39 カテゴリを巡回して約 80 リクエスト/日（3 秒間隔で約 4 分）
 
 ---
 

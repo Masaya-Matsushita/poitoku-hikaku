@@ -40,23 +40,44 @@ type Discovery struct {
 	// LabelAttr はカテゴリ名を持つ属性。空ならリンクのテキストを使う。
 	LabelAttr       string `yaml:"label_attr"`
 	LabelTrimPrefix string `yaml:"label_trim_prefix"`
+	// ParamPattern は href に対する正規表現。名前付きグループ（(?P<slug>...)）をテンプレートの
+	// パラメータにする。パスにカテゴリが入るサイト用。空ならクエリパラメータをそのまま使う。
+	ParamPattern string `yaml:"param_pattern"`
 }
 
 // Listing は一覧ページの取得と抽出方法。
 type Listing struct {
-	// URLTemplate は {page} と、発見したリンクのクエリパラメータ名（{parent_category} 等）を置換する。
-	URLTemplate   string            `yaml:"url_template"`
+	// URLTemplate は発見したリンクのパラメータ名（{parent_category}、{slug} 等）と {page} を置換する。
+	// {page} を含まなければ 1 ページだけ取る。
+	URLTemplate string `yaml:"url_template"`
+	// URLTemplates は同じカテゴリを複数の一覧（並び順違い等）で取る時に使う。url_template と併用不可。
+	URLTemplates  []string          `yaml:"url_templates"`
 	ParamDefaults map[string]string `yaml:"param_defaults"`
-	// MaxPages は 1 カテゴリあたりのページ数の上限（暴走防止）。
+	// MaxPages は 1 カテゴリ・1 テンプレートあたりのページ数の上限（暴走防止）。
 	MaxPages       int    `yaml:"max_pages"`
 	ItemSelector   string `yaml:"item_selector"`
 	NameSelector   string `yaml:"name_selector"`
 	RewardSelector string `yaml:"reward_selector"`
 	// RewardFallbackSelector は reward_selector で文字列が取れない時に見る要素（「ポイント対象外」等）。任意。
 	RewardFallbackSelector string `yaml:"reward_fallback_selector"`
-	LinkSelector           string `yaml:"link_selector"`
-	PaginationSelector     string `yaml:"pagination_selector"`
-	PaginationAttr         string `yaml:"pagination_attr"`
+	// RewardWhenEmpty は還元額の要素が無い案件に入れる文言（サイトが還元 0 の案件で要素を出さない場合）。
+	// 空なら還元額は空のまま（抽出失敗として数える）。任意。
+	RewardWhenEmpty    string `yaml:"reward_when_empty"`
+	LinkSelector       string `yaml:"link_selector"`
+	PaginationSelector string `yaml:"pagination_selector"`
+	PaginationAttr     string `yaml:"pagination_attr"`
+	// TotalSelector はカテゴリの総件数を持つ要素（任意）。取得件数と比べて表示上限による取りこぼしを記録する。
+	TotalSelector string `yaml:"total_selector"`
+	// TotalAttr は総件数を持つ属性。空なら要素のテキスト。
+	TotalAttr string `yaml:"total_attr"`
+}
+
+// Templates は一覧 URL のテンプレートを返す（url_template か url_templates のどちらか）。
+func (l Listing) Templates() []string {
+	if l.URLTemplate != "" {
+		return []string{l.URLTemplate}
+	}
+	return l.URLTemplates
 }
 
 // URLRules は詳細 URL の正規化と、サイト側 ID の抽出方法。
@@ -64,8 +85,14 @@ type URLRules struct {
 	// KeepParams に列挙したクエリパラメータだけ残す（追跡用パラメータを落とす）。空なら全部残す。
 	KeepParams []string `yaml:"keep_params"`
 	// RenameParams は同じ意味の別名を寄せる（s_id → site_id 等）。KeepParams より先に適用する。
-	RenameParams    map[string]string `yaml:"rename_params"`
-	ExternalIDRegex string            `yaml:"external_id_regex"`
+	RenameParams map[string]string `yaml:"rename_params"`
+	// PathPattern はパスに対する正規表現。一致したら PathTemplate（無ければ最初のグループ）をパスにする
+	// （/item/detail/itemid/1/apn/xxx → /item/detail/itemid/1/ のような追跡用の末尾を落とす）。任意。
+	PathPattern string `yaml:"path_pattern"`
+	// PathTemplate は PathPattern の一致から作る正規のパス。$1 等でグループを参照する。
+	// 同じ案件が別のパス（リダイレクト用 URL 等）で現れる場合に 1 つの URL に寄せる。任意。
+	PathTemplate    string `yaml:"path_template"`
+	ExternalIDRegex string `yaml:"external_id_regex"`
 }
 
 var (
@@ -119,11 +146,27 @@ func (d *Definition) Validate() error {
 		errs = append(errs, errors.New("discovery.url が空"))
 	}
 	errs = append(errs, checkSelector("discovery.link_selector", d.Discovery.LinkSelector, true)...)
+	if d.Discovery.ParamPattern != "" {
+		if re, err := regexp.Compile(d.Discovery.ParamPattern); err != nil {
+			errs = append(errs, fmt.Errorf("discovery.param_pattern が不正: %w", err))
+		} else if !hasNamedGroup(re) {
+			errs = append(errs, errors.New("discovery.param_pattern は名前付きグループ（(?P<name>...)）を 1 つ以上持つ"))
+		}
+	}
 
 	l := d.Listing
-	if !strings.Contains(l.URLTemplate, "{page}") {
-		errs = append(errs, errors.New("listing.url_template に {page} が無い"))
+	switch {
+	case l.URLTemplate != "" && len(l.URLTemplates) > 0:
+		errs = append(errs, errors.New("listing.url_template と listing.url_templates は併用できない"))
+	case l.URLTemplate == "" && len(l.URLTemplates) == 0:
+		errs = append(errs, errors.New("listing.url_template か listing.url_templates が必要"))
 	}
+	for i, t := range l.URLTemplates {
+		if t == "" {
+			errs = append(errs, fmt.Errorf("listing.url_templates[%d] が空", i))
+		}
+	}
+	errs = append(errs, checkSelector("listing.total_selector", l.TotalSelector, false)...)
 	if l.MaxPages <= 0 {
 		errs = append(errs, fmt.Errorf("listing.max_pages は 1 以上: %d", l.MaxPages))
 	}
@@ -137,6 +180,16 @@ func (d *Definition) Validate() error {
 		errs = append(errs, errors.New("listing.pagination_attr が空"))
 	}
 
+	if d.URL.PathPattern != "" {
+		if re, err := regexp.Compile(d.URL.PathPattern); err != nil {
+			errs = append(errs, fmt.Errorf("url.path_pattern が不正: %w", err))
+		} else if re.NumSubexp() < 1 {
+			errs = append(errs, errors.New("url.path_pattern はキャプチャグループを 1 つ以上持つ"))
+		}
+	}
+	if d.URL.PathTemplate != "" && d.URL.PathPattern == "" {
+		errs = append(errs, errors.New("url.path_template には url.path_pattern が必要"))
+	}
 	if d.URL.ExternalIDRegex == "" {
 		errs = append(errs, errors.New("url.external_id_regex が空"))
 	} else if re, err := regexp.Compile(d.URL.ExternalIDRegex); err != nil {
@@ -145,6 +198,31 @@ func (d *Definition) Validate() error {
 		errs = append(errs, errors.New("url.external_id_regex はキャプチャグループを 1 つ持つ"))
 	}
 	return errors.Join(errs...)
+}
+
+func hasNamedGroup(re *regexp.Regexp) bool {
+	for _, name := range re.SubexpNames() {
+		if name != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// ParamPattern はコンパイル済みの discovery.param_pattern を返す。未設定なら nil。Validate 済みの前提。
+func (d *Definition) ParamPattern() *regexp.Regexp {
+	if d.Discovery.ParamPattern == "" {
+		return nil
+	}
+	return regexp.MustCompile(d.Discovery.ParamPattern)
+}
+
+// PathPattern はコンパイル済みの url.path_pattern を返す。未設定なら nil。Validate 済みの前提。
+func (d *Definition) PathPattern() *regexp.Regexp {
+	if d.URL.PathPattern == "" {
+		return nil
+	}
+	return regexp.MustCompile(d.URL.PathPattern)
 }
 
 func checkSelector(name, sel string, required bool) []error {
@@ -184,11 +262,16 @@ func (d *Definition) Resolve(ref string) (string, error) {
 	return u.String(), nil
 }
 
-// RenderURL は url_template のプレースホルダを params（無ければ param_defaults）と page で置換し、
+// IsPaged はテンプレートが {page} を含む（ページ送りする）かを返す。
+func IsPaged(tmpl string) bool {
+	return strings.Contains(tmpl, "{page}")
+}
+
+// RenderURL はテンプレート tmpl のプレースホルダを params（無ければ param_defaults）と page で置換し、
 // base_url を基準に絶対 URL を返す。未解決のプレースホルダが残ればエラー。
-func (d *Definition) RenderURL(params map[string]string, page int) (string, error) {
+func (d *Definition) RenderURL(tmpl string, params map[string]string, page int) (string, error) {
 	var missing []string
-	out := placeholderPattern.ReplaceAllStringFunc(d.Listing.URLTemplate, func(m string) string {
+	out := placeholderPattern.ReplaceAllStringFunc(tmpl, func(m string) string {
 		name := m[1 : len(m)-1]
 		if name == "page" {
 			return fmt.Sprintf("%d", page)

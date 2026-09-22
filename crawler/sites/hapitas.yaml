@@ -1,0 +1,50 @@
+# ハピタス（hapitas.jp）のクロール定義。2026-09-23 に実 HTML で検証した。
+# 抽出は CSS セレクタ、定義はこの YAML に分離する（ADR-0003）。
+# リクエスト間隔・停止条件・User-Agent は crawler/internal/policy が持ち、ここでは変えられない。
+#
+# 仕組み：
+#   1. カテゴリページのヘッダーナビ（a.menu_item_link）から /category/<slug>/ のリンクを集める
+#      （2026-09 時点で 39 カテゴリ。サイトマップの category 一覧と同じ集合 + newest を除く）
+#   2. カテゴリページはサーバー側で描画され、1 ページに最大 120 件（サイトの limit）。
+#      「もっと見る」は JS の AJAX（/item/ajaxcategoryitems）だが、直接呼ぶと拒否されるため使わない。
+#      代わりに 4 つの並び順（人気順＝既定、高ポイント順、新着順、高還元率順）のページを取り、
+#      和集合で最大 480 件/カテゴリまで網羅する。ジャンル系のカテゴリは最大 333 件（2026-09）なので
+#      ほぼ全件、横断系（すぐ獲得 671 件・アプリ 634 件等）は上位のみ。総件数は #total_item_count で
+#      分かるので、届かないカテゴリは crawl 実行ログに「表示上限による取りこぼし」として出る
+#   3. 案件は #inner_catalog .item_slots_thumb（ピックアップ枠は除く）。案件名 .store、還元額 .caption
+#      （"10,000pt" または "1%"）、詳細 URL は a.thumb_slots_link の href
+#   4. 還元 0 の案件（Amazon の特集枠など）は .caption が無く、リンク先が
+#      /item/redirect-to-client-if-zero-point-item/itemid/N/apn/（robots.txt で禁止の遷移用 URL）になる。
+#      取得はしない（一覧に出た情報だけ使う）。URL は path_pattern + path_template で
+#      /item/detail/itemid/N/ に寄せ、還元額は「ポイント対象外」（0 ポイント）として記録する
+#   5. 詳細 URL の末尾 /apn/... は追跡用なので同じ正規化で落とす
+#
+# 保存するのは案件名・還元額・URL・カテゴリのみ（AGENTS.md）。
+id: hapitas
+name: ハピタス
+base_url: https://hapitas.jp
+
+discovery:
+  url: /category/service_credit/
+  link_selector: 'a.menu_item_link[href*="/category/"]'
+  param_pattern: '/category/(?P<slug>[a-z0-9_]+)/'
+
+listing:
+  url_templates:
+    - "/category/{slug}/"
+    - "/category/{slug}/itemtype/newest/sort/point/"
+    - "/category/{slug}/itemtype/newest/sort/registdate/"
+    - "/category/{slug}/itemtype/newest/sort/low_rate_point/"
+  max_pages: 1
+  item_selector: "#inner_catalog .item_slots_thumb"
+  name_selector: .store
+  reward_selector: .caption
+  reward_when_empty: ポイント対象外
+  link_selector: a.thumb_slots_link
+  total_selector: "#total_item_count"
+  total_attr: value
+
+url:
+  path_pattern: '^/item/[a-z-]+/itemid/([0-9]+)/'
+  path_template: '/item/detail/itemid/$1/'
+  external_id_regex: 'itemid/([0-9]+)'
