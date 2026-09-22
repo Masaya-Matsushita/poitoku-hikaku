@@ -36,13 +36,14 @@
 ### シークレットの期限
 
 週次 Routine（`docs/05-routines.md` の weekly-report）がこの表を読み、**残り 30 日を切った項目を `reports/` に警告として出す**。
-期限切れで止まるのは **マイグレーション適用（`deploy.yml` の supabase ジョブ）と、その後段の Hosting デプロイ**のみ。
-日次クロール（`crawl.yml`）は `SUPABASE_SECRET_KEY` を使うので影響を受けない。更新したら期限をこの表に書き直す。
+期限のある Secret は現在 `SUPABASE_ACCESS_TOKEN` だけで、**CI では使っていない**（マイグレーション適用は `SUPABASE_DB_PASSWORD` でセッションプーラーに直接つなぐ。`supabase/README.md`）。
+したがって今は期限切れで止まるものは無く、日次クロール（`crawl.yml`、`SUPABASE_SECRET_KEY`）もマイグレーション適用と Hosting デプロイも影響を受けない。
+将来、期限付きの Secret を CI で使う時は「切れると止まるもの」をこの表に書く。更新したら期限もこの表に書き直す。
 
 | Secret | 使う場所 | 期限 | 切れると止まるもの |
 |---|---|---|---|
-| `SUPABASE_ACCESS_TOKEN` | `deploy.yml`（db push）、`ci.yml`（dry-run） | **2027-09-21** | マイグレーション適用 → その後段の Hosting デプロイ |
-| `SUPABASE_DB_PASSWORD` | 同上 | 無期限（DB パスワード変更時に更新） | 同上 |
+| `SUPABASE_ACCESS_TOKEN` | CI では未使用（ローカル CLI 用に残す場合のみ） | **2027-09-21** | なし（削除してよい） |
+| `SUPABASE_DB_PASSWORD` | `deploy.yml`（db push）、`ci.yml`（dry-run）。セッションプーラー直結 | 無期限（DB パスワード変更時に更新） | マイグレーション適用 → その後段の Hosting デプロイ |
 | `SUPABASE_URL` | `crawl.yml` | 無期限 | — |
 | `SUPABASE_SECRET_KEY` | `crawl.yml` | 無期限（ローテーション時に更新） | 日次クロール |
 | `FIREBASE_SERVICE_ACCOUNT` | `deploy.yml`（hosting） | 無期限（鍵を失効させない限り） | Hosting デプロイ |
