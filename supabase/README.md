@@ -17,31 +17,51 @@ Supabase（PostgreSQL）のスキーマを `migrations/` に置く。プロジ�
 
 設計の意図はマイグレーションファイル冒頭のコメントに書いてある。
 
-## 適用方法（オーナーが行う）
+## 適用の流れ（自動）
 
-マイグレーションの本番適用は CI では行わない（`docs/03-guardrails.md`「破壊的マイグレーション」、
-および DB 接続情報を GitHub Secrets に置いていないため）。以下のいずれかで手動適用する。
+本番への適用は **main へのマージ時に `deploy.yml` が行う**。手元や Dashboard から本番に直接 DDL を流さない。
 
-### A. Dashboard の SQL Editor（最も簡単）
+```
+PR で supabase/migrations/ を変更
+  → ci.yml「supabase dry-run」：本番に対して supabase db push --dry-run --include-all
+      → 適用予定の SQL を PR コメントに出す（push ごとに同じコメントを更新）
+      → drop / alter ... type / truncate を含めば destructive-migration ラベルを付ける
+main にマージ
+  → deploy.yml「supabase db push」：supabase db push --include-all で適用
+  → 成功したら「firebase hosting」：web/ をビルドして配信（DB が失敗したら配信しない）
+```
 
-1. https://supabase.com/dashboard/project/tbvzseiehzuobglwbedo/sql/new を開く
-2. `migrations/*.sql` の内容をファイル名順に貼り付けて実行する
+- 適用済みなら `db push` は「up to date」で何もしない（冪等）
+- `--include-all`：リモート履歴に無いファイルをタイムスタンプの新旧に関わらず適用する。並行する PR の順序が入れ替わっても取り残さないため
+- CLI のバージョンは `ci.yml` と `deploy.yml` で `2.117.0` に固定している。上げる時は両方を変える
+- 使う Secrets：`SUPABASE_ACCESS_TOKEN`（CLI 認証）、`SUPABASE_DB_PASSWORD`（DB パスワード）。名前は `AGENTS.md`
+- 履歴は `supabase_migrations.schema_migrations` に残る。初回スキーマ（`20260922000000_initial_schema.sql`）は 2026-09-22 にオーナーがローカル CLI（`supabase link` → `supabase db push`）で適用し、履歴も記録済み
 
-### B. Supabase CLI
+### 破壊的マイグレーション（`destructive-migration` ラベル）
+
+`.github/scripts/detect-destructive-sql.sh` が、コメントを除いた各文に `drop` / `truncate` / `alter ... type` が含まれるかを見る。
+文字列リテラル内の語も拾うので誤検知はありうる（疑わしい側に倒している）。
+
+- ラベル付き PR は自動マージの対象外。オーナーがレビューして承認する（`docs/03-guardrails.md`）
+- CI はラベルを付けるだけで外さない。誤検知や修正後に外すのはオーナー
+- Routine は破壊的変更を実装せず、`docs/proposals/` に提案を書く
+
+## 新しいマイグレーションの追加
+
+- ファイル名は `YYYYMMDDHHmmss_<内容>.sql`（`supabase migration new <内容>` で生成できる）
+- **既存ファイルは編集しない**。適用済みのファイルを変えても本番には反映されず、履歴と食い違うだけ。変更は新しいファイルで積む
+- `create index concurrently` のようにトランザクション外で走る文は、単独のファイルに分けて `if not exists` を付ける（途中で失敗すると履歴なしの半適用になる）
+- ローカルで構文だけ確かめたい時は PR を出せば dry-run コメントで確認できる
+
+## 手動で触る必要がある時（オーナーのみ）
 
 ```sh
 brew install supabase/tap/supabase
 supabase login
 supabase link --project-ref tbvzseiehzuobglwbedo   # DB パスワードを聞かれる
-supabase db push                                    # 未適用の migrations を順に適用
+supabase db push --dry-run --include-all             # 適用予定の確認
+supabase migration list                              # ローカルと本番の履歴の突き合わせ
 ```
 
-CLI で適用すると `supabase_migrations.schema_migrations` に適用履歴が残り、
-以後 `supabase db push` で差分だけ適用できる。A で適用した場合は履歴が残らないため、
-CLI に切り替える時は `supabase migration repair --status applied 20260922000000` で整合させる。
-
-## 新しいマイグレーションの追加
-
-- ファイル名は `YYYYMMDDHHmmss_<内容>.sql`（Supabase CLI の規約）
-- 既存ファイルは編集しない。変更は新しいファイルで積む
-- 列や表を落とす・型を変える破壊的変更はオーナー承認必須。Routine は `docs/proposals/` に提案を書くに留める
+Dashboard から直接 DDL を実行した場合や、履歴だけがずれた場合は `supabase migration repair --status applied <version>` で
+`schema_migrations` を整合させる。CI の dry-run が「remote versions absent locally」で落ちる時もこれが原因。

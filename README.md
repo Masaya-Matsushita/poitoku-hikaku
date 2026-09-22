@@ -32,9 +32,10 @@ web/                  React + Vite + TypeScript（静的生成。現在は仮ペ
 supabase/
   migrations/         スキーマ。適用手順は supabase/README.md
 .github/workflows/
-  ci.yml              PR と main：go test / vitest / lint
-  deploy.yml          main への push：Firebase Hosting へデプロイ
+  ci.yml              PR と main：go test / vitest / lint。migrations 変更時は Supabase の dry-run を PR コメントに
+  deploy.yml          main への push：supabase db push → Firebase Hosting へデプロイ
   （daily-crawl / weekly-backup は今後追加）
+.github/scripts/      ワークフローから呼ぶスクリプト（dry-run のコメント生成、破壊的 SQL の検出）
 firebase.json         Hosting 設定（公開ディレクトリは web/dist）
 .tool-versions        Go / Node のバージョン固定（asdf）。CI もこれを読む
 ```
@@ -54,5 +55,5 @@ cd web && npm ci && npm run lint && npm run typecheck && npm test && npm run bui
 | サービス | 識別子 | 備考 |
 |---|---|---|
 | Firebase Hosting | プロジェクト `poitoku-hikaku` | https://poitoku-hikaku.web.app |
-| Supabase | プロジェクト `tbvzseiehzuobglwbedo` | スキーマ適用は手動（`supabase/README.md`） |
+| Supabase | プロジェクト `tbvzseiehzuobglwbedo` | マイグレーションは main マージ時に `deploy.yml` が適用（`supabase/README.md`） |
 | GitHub Actions | このリポジトリ | Secrets 名は `AGENTS.md` |
