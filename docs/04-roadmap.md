@@ -12,7 +12,7 @@
 
 ## Phase 1：データパイプライン（最優先、目標：着手から1週間で本番稼働）
 
-- [x] リポジトリ初期化、AGENTS.md、CI、Branch protection（2026-09-22。モノレポ雛形 `crawler/` `web/`、`ci.yml`。Branch protection は PR 必須のみ設定済みで、required status checks（`go` / `web`）は CI 初回通過後に追加）
+- [x] リポジトリ初期化、AGENTS.md、CI、Branch protection（2026-09-22。モノレポ雛形 `crawler/` `web/`、`ci.yml`。Branch protection は PR 必須＋required status checks `go` / `web`）
 - [x] Supabase スキーマ（`sites` / `offers` / `offer_snapshots` / `crawl_logs` / `current_offers`。`supabase/migrations/` に作成、設計意図は同ファイル冒頭）
 - [ ] Supabase スキーマの本番適用（オーナーが手動。手順は `supabase/README.md`）
 - [ ] Go クローラー：モッピー（検索結果HTML）
