@@ -48,6 +48,17 @@ main にマージ
 - CI はラベルを付けるだけで外さない。誤検知や修正後に外すのはオーナー
 - Routine は破壊的変更を実装せず、`docs/proposals/` に提案を書く
 
+## テーブル権限（GRANT）
+
+RLS のポリシーとは別に、ロールにテーブル権限（GRANT）が要る。Supabase は `postgres` ロールが作ったテーブルに
+anon / authenticated / service_role への GRANT を既定で付けるが、**別のロールが作ったテーブルには付かない**。
+初回スキーマはローカル CLI のリンク経由（一時ログインロール）で適用されたためこれが抜け、クローラーの
+`crawl_logs` への INSERT が `permission denied`（42501）で失敗した（2026-09-22。`20260922090000_grant_table_privileges.sql` で付与）。
+
+- CI（`deploy.yml`）は `postgres.<ref>` で接続するので、CI で適用したマイグレーションが作るテーブルには既定の GRANT が付く
+- 手元のリンク経由（`supabase link` → `db push`）で適用した場合は、テーブル・ビュー・シーケンスへの GRANT を同じマイグレーションに書く
+- 新しいテーブルを作る時は、念のため GRANT を明示するのが安全（冪等なので重ねて実行してよい）
+
 ## 新しいマイグレーションの追加
 
 - ファイル名は `YYYYMMDDHHmmss_<内容>.sql`（`supabase migration new <内容>` で生成できる）
