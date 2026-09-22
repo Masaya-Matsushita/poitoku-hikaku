@@ -3,12 +3,13 @@
 # （ci.yml の supabase-dry-run ジョブ。運用は supabase/README.md）。
 #
 # 使い方:   supabase-dry-run.sh <project-ref> <出力ディレクトリ>
-# 環境変数: SUPABASE_ACCESS_TOKEN / SUPABASE_DB_PASSWORD  CLI が読む（GitHub Secrets）
-#           SUPABASE_BIN   テスト用に CLI を差し替える。既定は supabase
-#           GITHUB_OUTPUT  あれば status / destructive / pending_count を書く
+#           project-ref は表示用。接続先は SUPABASE_DB_URL で決まる
+# 環境変数: SUPABASE_DB_URL  セッションプーラーへの接続文字列（ワークフローが SUPABASE_DB_PASSWORD から組み立てる）
+#           SUPABASE_BIN     テスト用に CLI を差し替える。既定は supabase
+#           GITHUB_OUTPUT    あれば status / destructive / pending_count を書く
 # 生成物（出力ディレクトリ内）:
 #   dry-run.json     CLI の構造化出力 {"upToDate","dryRun","migrations",...}
-#   dry-run.log      link の出力と db push の stderr（接続状況、エラー）
+#   dry-run.log      db push の stderr（接続状況、エラー）
 #   pending.txt      適用予定のマイグレーションファイル（1 行 1 件）
 #   destructive.txt  破壊的と判定した文（detect-destructive-sql.sh の出力）
 #   comment.md       PR コメント本文
@@ -17,6 +18,7 @@ set -euo pipefail
 
 ref="${1:?usage: $0 <project-ref> <out-dir>}"
 out="${2:?usage: $0 <project-ref> <out-dir>}"
+db_url="${SUPABASE_DB_URL:?SUPABASE_DB_URL が未設定}"
 mkdir -p "$out"
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -33,18 +35,13 @@ set_output() {
 }
 
 # ---------------------------------------------------------------------------
-# 1. link → dry-run（適用はしない）。deploy.yml の本番適用と同じ手順・フラグを使う。
-#    GitHub Actions のランナーは IPv6 を持たず DB へ直接接続できないため、link で
-#    プーラー（IPv4）経由の接続設定を作ってから db push する
+# 1. dry-run（適用はしない）。deploy.yml の本番適用と同じ接続（--db-url でセッションプーラーへ直接）・
+#    同じフラグを使う。Management API（アクセストークン）は使わない
 # ---------------------------------------------------------------------------
 set +e
-"$supabase_bin" link --project-ref "$ref" --yes > "$out/dry-run.log" 2>&1
+"$supabase_bin" db push --dry-run --include-all --db-url "$db_url" --output-format json --yes \
+  > "$out/dry-run.json" 2> "$out/dry-run.log"
 code=$?
-if [ "$code" -eq 0 ]; then
-  "$supabase_bin" db push --dry-run --include-all --output-format json --yes \
-    > "$out/dry-run.json" 2>> "$out/dry-run.log"
-  code=$?
-fi
 set -e
 
 if [ "$code" -ne 0 ]; then
@@ -52,13 +49,14 @@ if [ "$code" -ne 0 ]; then
     echo "$marker"
     echo "## Supabase マイグレーション dry-run：失敗"
     echo
-    echo "コミット \`${sha:0:7}\`、プロジェクト \`$ref\`。\`supabase link\` → \`supabase db push --dry-run --include-all\` が終了コード $code で失敗しました。"
+    echo "コミット \`${sha:0:7}\`、プロジェクト \`$ref\`。\`supabase db push --dry-run --include-all --db-url ...\` が終了コード $code で失敗しました。"
     echo
     echo '```text'
-    tail -c 6000 "$out/dry-run.log" | sed 's/\x1b\[[0-9;]*m//g'
+    # ANSI を除き、接続文字列の user:password@ 部分を伏せる（コメントは GitHub のマスク対象外）
+    tail -c 6000 "$out/dry-run.log" | sed -E 's/\x1b\[[0-9;]*m//g; s#(postgres(ql)?://[^:/@]+):[^@]*@#\1:***@#g'
     echo '```'
     echo
-    echo "典型的な原因：Secrets（\`SUPABASE_ACCESS_TOKEN\` / \`SUPABASE_DB_PASSWORD\`）の未設定、リモートにだけ存在する履歴（\`supabase migration repair\` が必要）、DB への接続失敗。"
+    echo "典型的な原因：Secret \`SUPABASE_DB_PASSWORD\` の未設定・不一致、プーラーのホスト名の変更（ワークフローの SUPABASE_DB_HOST）、リモートにだけ存在する履歴（\`supabase migration repair\` が必要）。"
   } > "$out/comment.md"
   set_output status error
   set_output destructive false
@@ -108,7 +106,7 @@ fi
   echo "$marker"
   echo "## Supabase マイグレーション dry-run"
   echo
-  echo "コミット \`${sha:0:7}\`、プロジェクト \`$ref\`、コマンド \`supabase link\` → \`supabase db push --dry-run --include-all\`（main マージ後に deploy.yml が同じ手順で適用）。"
+  echo "コミット \`${sha:0:7}\`、プロジェクト \`$ref\`、コマンド \`supabase db push --dry-run --include-all --db-url <セッションプーラー>\`（main マージ後に deploy.yml が同じ接続・フラグで適用）。"
   echo
   if [ "$pending_count" -eq 0 ]; then
     echo "適用予定のマイグレーションはありません。リモートは最新です。"

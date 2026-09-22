@@ -39,8 +39,8 @@
 - `SUPABASE_URL` — `https://<project-id>.supabase.co`
 - `SUPABASE_SECRET_KEY` — `sb_secret_...`（RLSを無視できる。クローラーの書き込み専用。フロントに出さない）
 - `FIREBASE_SERVICE_ACCOUNT` — デプロイ用サービスアカウントJSON
-- `SUPABASE_ACCESS_TOKEN` — Supabase CLI の認証トークン（`sbp_...`）。`deploy.yml` の `db push` と `ci.yml` の dry-run が使う
-- `SUPABASE_DB_PASSWORD` — 本番 DB の postgres パスワード。同上。コードやログに出さない
+- `SUPABASE_DB_PASSWORD` — 本番 DB の postgres パスワード。`deploy.yml` の `db push` と `ci.yml` の dry-run がセッションプーラー経由の `--db-url` で使う。コードやログに出さない
+- `SUPABASE_ACCESS_TOKEN` — Supabase の Personal Access Token（`sbp_...`、スコープは Migrations 読み書き・Database 読み・Database Config 読み）。**CI では使っていない**（`supabase link` がこのスコープでは通らないため `--db-url` 接続に切り替えた。`supabase/README.md`）。削除してよいが、残す場合は期限 2027-09-21
 
 publishable key（`sb_publishable_...`）は公開してよい鍵なので Secrets ではなくコードに置く。
 
