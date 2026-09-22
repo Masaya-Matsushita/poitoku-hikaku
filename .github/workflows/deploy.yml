@@ -36,11 +36,16 @@ jobs:
         with:
           version: 2.117.0 # ci.yml と揃える
 
+      # GitHub Actions のランナーは IPv6 を持たず、DB への直接接続（IPv6 のみ）ができない。
+      # link がプーラー（IPv4）経由の接続設定を作るので、db push の前に必ず実行する
+      - name: link（プーラー経由の接続設定）
+        run: supabase link --project-ref "$SUPABASE_PROJECT_REF" --yes
+
       - name: 適用予定を表示
-        run: supabase db push --dry-run --include-all --project-ref "$SUPABASE_PROJECT_REF" --yes
+        run: supabase db push --dry-run --include-all --yes
 
       - name: 適用
-        run: supabase db push --include-all --project-ref "$SUPABASE_PROJECT_REF" --yes
+        run: supabase db push --include-all --yes
 
   hosting:
     name: firebase hosting
