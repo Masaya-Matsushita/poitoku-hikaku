@@ -12,7 +12,7 @@
 | main への直push禁止 | GitHub Branch protection（PR必須、CI必須） |
 | 本番デプロイは main からのみ | GitHub Actions の deploy job を `if: github.ref == 'refs/heads/main'` |
 | テスト通過必須 | CI で `go test` / `vitest` / lint。失敗したPRはマージ不可 |
-| AIの自動マージ範囲 | 初期は **セレクタ定義（`crawler/sites/*.yaml`）とドキュメントのみ自動マージ可**。それ以外はオーナー承認 |
+| AIの自動マージ範囲 | 初期は **セレクタ定義（`crawler/sites/*.yaml`）とドキュメントのみ自動マージ可**。それ以外はオーナー承認。`destructive-migration` ラベルが付いた PR は範囲内でも自動マージ不可 |
 | シークレット | GitHub Secrets のみ。`.env*` は `.gitignore`。Claude は `.env*` を読まない（AGENTS.md に明記） |
 
 ### クローラー（対象サイトへの加害防止）
@@ -38,7 +38,9 @@
 | ガードレール | 実装 |
 |---|---|
 | 週次バックアップ | GitHub Actions で `pg_dump` → 暗号化 → GitHub Release（private）or 別リポジトリ |
-| 破壊的マイグレーション | オーナー承認必須（Routineは提案のみ） |
+| マイグレーションは main からのみ適用 | `deploy.yml` が main への push 時に `supabase db push` を実行し、その後に Hosting を配信。手元や Dashboard から本番に直接 DDL を流さない |
+| 適用前に内容が見える | `supabase/migrations/` を変更する PR では `ci.yml` が本番に対して `db push --dry-run` を実行し、適用予定の SQL を PR コメントに出す |
+| 破壊的マイグレーション | dry-run の SQL に drop / alter ... type / truncate があれば CI が `destructive-migration` ラベルを付ける。ラベル付き PR はオーナー承認必須（Routine は提案のみ。ラベルを外すのもオーナー） |
 
 ## 事故が起きてから足すもの（想定リスト）
 

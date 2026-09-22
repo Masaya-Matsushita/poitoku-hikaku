@@ -24,7 +24,7 @@
 - クロールのリクエスト間隔（3秒）と頻度（1日1回）を短くしない。テストが落ちる
 - 有料サービス・有料APIを有効化しない。支払い手段は存在しない（ADR-0002）
 - main に直接 push しない。すべてPR経由
-- 破壊的DBマイグレーションはPRのみ。自動マージしない
+- 破壊的DBマイグレーション（drop / alter ... type / truncate。CI が `destructive-migration` ラベルを付ける）は自動マージしない。適用済みのマイグレーションファイルは編集せず、新しいファイルを積む
 - 対象サイトのコンテンツを転載しない。保存するのは案件名・還元額・URL・カテゴリのみ
 
 ## 自動マージしてよい範囲
@@ -32,13 +32,15 @@
 - `crawler/sites/*.yaml`（セレクタ定義。テスト通過が条件）
 - `docs/**`、`reports/**`
 
-それ以外はオーナー承認を待つ。
+それ以外はオーナー承認を待つ。`destructive-migration` ラベルが付いた PR は、上記に該当しても自動マージしない。
 
 ## 存在する GitHub Secrets（値は読めない。名前だけ知っておく）
 
 - `SUPABASE_URL` — `https://<project-id>.supabase.co`
 - `SUPABASE_SECRET_KEY` — `sb_secret_...`（RLSを無視できる。クローラーの書き込み専用。フロントに出さない）
 - `FIREBASE_SERVICE_ACCOUNT` — デプロイ用サービスアカウントJSON
+- `SUPABASE_ACCESS_TOKEN` — Supabase CLI の認証トークン（`sbp_...`）。`deploy.yml` の `db push` と `ci.yml` の dry-run が使う
+- `SUPABASE_DB_PASSWORD` — 本番 DB の postgres パスワード。同上。コードやログに出さない
 
 publishable key（`sb_publishable_...`）は公開してよい鍵なので Secrets ではなくコードに置く。
 

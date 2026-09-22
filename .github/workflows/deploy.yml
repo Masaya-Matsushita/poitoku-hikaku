@@ -1,4 +1,6 @@
-# 本番デプロイ：main への push 時のみ Firebase Hosting（live チャンネル）へ配信する。
+# 本番デプロイ：main への push 時のみ。
+#   1. supabase db push で未適用のマイグレーションを本番 DB に適用
+#   2. その後 web/ をビルドして Firebase Hosting（live チャンネル）へ配信
 # docs/03-guardrails.md「本番デプロイは main からのみ」。手動起動（workflow_dispatch）は
 # 意図的に付けていない。プレビューチャンネルも使わない（Secrets を PR に露出させない）。
 name: Deploy
@@ -12,12 +14,37 @@ permissions:
 
 # デプロイは並列させない。進行中のものは取り消さず、後続を待たせる
 concurrency:
-  group: deploy-firebase-hosting
+  group: deploy-production
   cancel-in-progress: false
 
 jobs:
+  # PR の dry-run（ci.yml）と同じフラグで適用する。適用済みなら "up to date" で何もしない。
+  # 失敗したら hosting は動かない（スキーマが古いままフロントだけ更新しないため）
+  supabase:
+    name: supabase db push
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_REF: tbvzseiehzuobglwbedo
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: supabase/setup-cli@v3
+        with:
+          version: 2.117.0 # ci.yml と揃える
+
+      - name: 適用予定を表示
+        run: supabase db push --dry-run --include-all --project-ref "$SUPABASE_PROJECT_REF" --yes
+
+      - name: 適用
+        run: supabase db push --include-all --project-ref "$SUPABASE_PROJECT_REF" --yes
+
   hosting:
     name: firebase hosting
+    needs: supabase
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:

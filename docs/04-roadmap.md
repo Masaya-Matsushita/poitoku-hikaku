@@ -14,7 +14,7 @@
 
 - [x] リポジトリ初期化、AGENTS.md、CI、Branch protection（2026-09-22。モノレポ雛形 `crawler/` `web/`、`ci.yml`。Branch protection は PR 必須＋required status checks `go` / `web`）
 - [x] Supabase スキーマ（`sites` / `offers` / `offer_snapshots` / `crawl_logs` / `current_offers`。`supabase/migrations/` に作成、設計意図は同ファイル冒頭）
-- [ ] Supabase スキーマの本番適用（オーナーが手動。手順は `supabase/README.md`）
+- [x] Supabase スキーマの本番適用（2026-09-22 にオーナーがローカル CLI で適用。以後は main マージ時に `deploy.yml` が自動適用し、PR では dry-run をコメント。`supabase/README.md`）
 - [ ] Go クローラー：モッピー（検索結果HTML）
 - [ ] Go クローラー：ハピタス（個別ページ `<title>`）
 - [ ] セレクタを YAML 定義に分離
