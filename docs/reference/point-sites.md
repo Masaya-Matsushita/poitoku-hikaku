@@ -36,7 +36,7 @@
 | 一覧取得 | `GET /ajax/category/get_list.php?parent_category=N&child_category=N&objective_category=0&current_page=N&af_sorter=1&exclude_purchased=`。30 件/ページ、最終ページ番号は `.a-pagination__list a[current]` の最大値。範囲外のページは 0 件を返す |
 | 必要ヘッダ | `X-Requested-With: XMLHttpRequest`（無いと 200 で空応答）。Cookie は不要 |
 | JS実行 | 不要（断片はサーバー側で描画済み） |
-| 案件要素 | `li.m-list__item > a.block__link[href]`、案件名 `h3.a-list__item__title`、還元額 `em.a-list__item__point`（"10,000P" または "1.0%"） |
+| 案件要素 | `li.m-list__item > a.block__link[href]`、案件名 `h3.a-list__item__title`、還元額 `em.a-list__item__point`（"10,000P" または "1.0%"）。還元が無い案件は `.a-list__item__point` が無く `p.a-list__item__benefit` に「ポイント対象外」と出る（2026-09-22 時点で 16 件。0 ポイントとして扱う） |
 | 詳細URL | `/ad/detail.php?site_id=N`（ショッピング系は `/shopping/detail.php?site_id=N`）。`track_ref` 等の追跡パラメータは落とし、特集枠の `s_id` は同じ ID なので `site_id` に寄せる |
 | 旧URL | `/ad/?c_id=N`、`/ad/?m_id=N`（sitemap.xml に残る 2010 年の URL）はランキングやトップへリダイレクトされ、使えない。カテゴリページ `/category/list.php` 本体は一覧を JS で読むため、断片を直接取る |
 

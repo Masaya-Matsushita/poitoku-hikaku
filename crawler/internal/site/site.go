@@ -48,13 +48,15 @@ type Listing struct {
 	URLTemplate   string            `yaml:"url_template"`
 	ParamDefaults map[string]string `yaml:"param_defaults"`
 	// MaxPages は 1 カテゴリあたりのページ数の上限（暴走防止）。
-	MaxPages           int    `yaml:"max_pages"`
-	ItemSelector       string `yaml:"item_selector"`
-	NameSelector       string `yaml:"name_selector"`
-	RewardSelector     string `yaml:"reward_selector"`
-	LinkSelector       string `yaml:"link_selector"`
-	PaginationSelector string `yaml:"pagination_selector"`
-	PaginationAttr     string `yaml:"pagination_attr"`
+	MaxPages       int    `yaml:"max_pages"`
+	ItemSelector   string `yaml:"item_selector"`
+	NameSelector   string `yaml:"name_selector"`
+	RewardSelector string `yaml:"reward_selector"`
+	// RewardFallbackSelector は reward_selector で文字列が取れない時に見る要素（「ポイント対象外」等）。任意。
+	RewardFallbackSelector string `yaml:"reward_fallback_selector"`
+	LinkSelector           string `yaml:"link_selector"`
+	PaginationSelector     string `yaml:"pagination_selector"`
+	PaginationAttr         string `yaml:"pagination_attr"`
 }
 
 // URLRules は詳細 URL の正規化と、サイト側 ID の抽出方法。
@@ -128,6 +130,7 @@ func (d *Definition) Validate() error {
 	errs = append(errs, checkSelector("listing.item_selector", l.ItemSelector, true)...)
 	errs = append(errs, checkSelector("listing.name_selector", l.NameSelector, true)...)
 	errs = append(errs, checkSelector("listing.reward_selector", l.RewardSelector, true)...)
+	errs = append(errs, checkSelector("listing.reward_fallback_selector", l.RewardFallbackSelector, false)...)
 	errs = append(errs, checkSelector("listing.link_selector", l.LinkSelector, true)...)
 	errs = append(errs, checkSelector("listing.pagination_selector", l.PaginationSelector, false)...)
 	if l.PaginationSelector != "" && l.PaginationAttr == "" {

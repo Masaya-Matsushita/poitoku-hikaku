@@ -1,0 +1,67 @@
+	<header class="m-title__header flex--between">
+		<div class="m-list__title">
+			<h1 class="a-title__h1">ふるさと納税広告一覧</h1>
+			<span class="a-list__total">（5件）</span>
+		</div>
+		<div>
+									<div id="js-list__item__operation" class="a-form__option--pulldown m-list__sorter" data-ga-event="change" data-ga-action="クリック - 並び順プルダウン">
+									<select name="af_sorter" class="a-form__select" id="af_sorter" onchange="getCategoryList( $('#parent_category').val(),$('#child_category').val(),1,$('#af_sorter').val(),$('#exclude_purchased').prop('checked'));" aria-label="並び替え">
+						<option value="1" selected data-ga-label="人気順">人気順</option>
+						<option value="2"  data-ga-label="新着順">新着順</option>
+						<option value="3"  data-ga-label="ポイント順">ポイント順</option>
+											</select>
+							</div>
+		</div>
+	</header>
+
+
+	<ul class="o-list--portrait o-list--col5" data-ga-action="クリック - ふるさと納税広告一覧">
+													<li class="m-list__item">
+										<a href="https://pc.moppy.jp/ad/detail.php?site_id=161749&track_ref=category" class="block__link" data-ga-label="ANAのふるさと納税">
+												<figure class="a-list__item__img"><img decoding="async" loading="lazy" src="https://ad-track.jp/ad/p/img?_site=1831&amp;_article=24857&amp;_link=46218&amp;_image=47616" alt="ANAのふるさと納税" width="120" height="120"></figure>
+						<h3 class="a-list__item__title a-list__item__title--line-clamp2">ANAのふるさと納税</h3>
+						<p class="a-list__item__action a-list__item__action--line-clamp1">ポイント対象外</p>
+																			<p class="a-list__item__benefit">ポイント対象外</p>
+											</a>
+				</li>
+																<li class="m-list__item">
+										<a href="https://pc.moppy.jp/ad/detail.php?site_id=161470&track_ref=category" class="block__link" data-ga-label="株式会社ふるさと本舗">
+												<figure class="a-list__item__img"><img decoding="async" loading="lazy" src="https://ad-track.jp/ad/p/img?_site=1831&amp;_article=26398&amp;_link=49357&amp;_image=50862" alt="株式会社ふるさと本舗" width="120" height="120"></figure>
+						<h3 class="a-list__item__title a-list__item__title--line-clamp2">株式会社ふるさと本舗</h3>
+						<p class="a-list__item__action a-list__item__action--line-clamp1">寄付申込後の入金</p>
+																			<p class="a-list__item__benefit">ポイント対象外</p>
+											</a>
+				</li>
+																<li class="m-list__item">
+										<a href="https://pc.moppy.jp/ad/detail.php?site_id=160566&track_ref=category" class="block__link" data-ga-label="Amazonふるさと納税">
+												<figure class="a-list__item__img"><img decoding="async" loading="lazy" src="https://img.moppy.jp/pub/operation/2025/t-furusato_01.jpg" alt="Amazonふるさと納税" width="120" height="120"></figure>
+						<h3 class="a-list__item__title a-list__item__title--line-clamp2">Amazonふるさと納税</h3>
+						<p class="a-list__item__action a-list__item__action--line-clamp1">ポイント対象外</p>
+																			<p class="a-list__item__benefit">ポイント対象外</p>
+											</a>
+				</li>
+																<li class="m-list__item">
+										<a href="https://pc.moppy.jp/ad/detail.php?site_id=161042&track_ref=category" class="block__link" data-ga-label="ふるさと納税「ふるさとプレミアム」">
+												<figure class="a-list__item__img"><img decoding="async" loading="lazy" src="https://ad-track.jp/ad/p/img?_site=1831&amp;_article=8941&amp;_link=15150&amp;_image=15471" alt="ふるさと納税「ふるさとプレミアム」" width="120" height="120"></figure>
+						<h3 class="a-list__item__title a-list__item__title--line-clamp2">ふるさと納税「ふるさとプレミアム」</h3>
+						<p class="a-list__item__action a-list__item__action--line-clamp1">ポイント対象外</p>
+																			<p class="a-list__item__benefit">ポイント対象外</p>
+											</a>
+				</li>
+																<li class="m-list__item">
+										<a href="https://pc.moppy.jp/ad/detail.php?site_id=160846&track_ref=category" class="block__link" data-ga-label="JRE MALLふるさと納税">
+												<figure class="a-list__item__img"><img decoding="async" loading="lazy" src="https://ad.jp.ap.valuecommerce.com/servlet/gifbanner?sid=2728858&amp;pid=892324963" alt="JRE MALLふるさと納税" width="120" height="120"></figure>
+						<h3 class="a-list__item__title a-list__item__title--line-clamp2">JRE MALLふるさと納税</h3>
+						<p class="a-list__item__action a-list__item__action--line-clamp1">ポイント対象外</p>
+																			<p class="a-list__item__benefit">ポイント対象外</p>
+											</a>
+				</li>
+						</ul>
+		<div class="m-pagination">
+		<p class="a-pagination__counter"><em>1 - 5</em>を表示／5件中</p>
+		<ul class="a-pagination__list" data-ga-action="クリック - ページャー">
+					<li>
+				<a class="a-pagination--active" current="1" data-ga-label="1" onclick="gaEventTracking.sendEvent($(this));getCategoryList( $('#parent_category').val(),$('#child_category').val(),1,$('#af_sorter').val(),$('#exclude_purchased').prop('checked'));">1</a>
+			</li>
+				</ul>
+	</div><!--/.m-pagination-->
