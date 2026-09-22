@@ -1,0 +1,46 @@
+# 本番デプロイ：main への push 時のみ Firebase Hosting（live チャンネル）へ配信する。
+# docs/03-guardrails.md「本番デプロイは main からのみ」。手動起動（workflow_dispatch）は
+# 意図的に付けていない。プレビューチャンネルも使わない（Secrets を PR に露出させない）。
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# デプロイは並列させない。進行中のものは取り消さず、後続を待たせる
+concurrency:
+  group: deploy-firebase-hosting
+  cancel-in-progress: false
+
+jobs:
+  hosting:
+    name: firebase hosting
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://poitoku-hikaku.web.app
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .tool-versions
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: build
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - name: deploy
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          projectId: poitoku-hikaku
+          channelId: live
