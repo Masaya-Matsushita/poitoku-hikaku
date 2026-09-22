@@ -43,6 +43,7 @@ create table public.sites (
   id             text primary key,
   name           text not null,
   url            text not null,
+  -- 1円あたりのポイント数。10pt=1円 なら 10（円 = reward_points / points_per_yen）
   points_per_yen integer not null default 1 check (points_per_yen > 0),
   is_active      boolean not null default true,
   created_at     timestamptz not null default now(),
@@ -51,7 +52,7 @@ create table public.sites (
 
 comment on table  public.sites is '対象ポイントサイトのマスタ。id は crawler/sites/<id>.yaml と一致させる';
 comment on column public.sites.id is 'スラッグ（moppy, hapitas ...）';
-comment on column public.sites.points_per_yen is '1円あたりのポイント数。モッピー・ハピタスは 1、ポイントインカムは 10';
+comment on column public.sites.points_per_yen is '1円あたりのポイント数。1P=1円 のモッピー・ハピタスは 1、10pt=1円 のポイントインカムは 10、2pt=1円 のちょびリッチは 2。円換算は reward_points / points_per_yen（current_offers.reward_yen）';
 comment on column public.sites.is_active is 'false にするとクロール対象から外す';
 
 create trigger sites_set_updated_at
