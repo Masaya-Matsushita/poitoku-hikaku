@@ -113,7 +113,8 @@ jobs:
         with:
           version: 2.117.0 # deploy.yml と揃える
 
-      - name: supabase db push --dry-run
+      # スクリプト内で supabase link（プーラー経由の接続設定）→ db push --dry-run の順に実行する
+      - name: supabase link → db push --dry-run
         if: steps.changed.outputs.changed == 'true'
         id: dryrun
         env:

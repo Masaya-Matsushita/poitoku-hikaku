@@ -23,14 +23,15 @@ Supabase（PostgreSQL）のスキーマを `migrations/` に置く。プロジ�
 
 ```
 PR で supabase/migrations/ を変更
-  → ci.yml「supabase dry-run」：本番に対して supabase db push --dry-run --include-all
+  → ci.yml「supabase dry-run」：supabase link → 本番に対して supabase db push --dry-run --include-all
       → 適用予定の SQL を PR コメントに出す（push ごとに同じコメントを更新）
       → drop / alter ... type / truncate を含めば destructive-migration ラベルを付ける
 main にマージ
-  → deploy.yml「supabase db push」：supabase db push --include-all で適用
+  → deploy.yml「supabase db push」：supabase link → supabase db push --include-all で適用
   → 成功したら「firebase hosting」：web/ をビルドして配信（DB が失敗したら配信しない）
 ```
 
+- CI では `db push` の前に必ず `supabase link --project-ref tbvzseiehzuobglwbedo` を実行する。GitHub Actions のランナーは IPv6 を持たず、DB への直接接続（IPv6 のみ）ができないため、link がプーラー（IPv4）経由の接続設定を作る。link 後の `db push` に `--project-ref` は不要
 - 適用済みなら `db push` は「up to date」で何もしない（冪等）
 - `--include-all`：リモート履歴に無いファイルをタイムスタンプの新旧に関わらず適用する。並行する PR の順序が入れ替わっても取り残さないため
 - CLI のバージョンは `ci.yml` と `deploy.yml` で `2.117.0` に固定している。上げる時は両方を変える

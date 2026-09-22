@@ -8,7 +8,7 @@
 #           GITHUB_OUTPUT  あれば status / destructive / pending_count を書く
 # 生成物（出力ディレクトリ内）:
 #   dry-run.json     CLI の構造化出力 {"upToDate","dryRun","migrations",...}
-#   dry-run.log      CLI の stderr（接続状況、エラー）
+#   dry-run.log      link の出力と db push の stderr（接続状況、エラー）
 #   pending.txt      適用予定のマイグレーションファイル（1 行 1 件）
 #   destructive.txt  破壊的と判定した文（detect-destructive-sql.sh の出力）
 #   comment.md       PR コメント本文
@@ -33,12 +33,18 @@ set_output() {
 }
 
 # ---------------------------------------------------------------------------
-# 1. dry-run（適用はしない）。deploy.yml の本番適用と同じフラグを使う
+# 1. link → dry-run（適用はしない）。deploy.yml の本番適用と同じ手順・フラグを使う。
+#    GitHub Actions のランナーは IPv6 を持たず DB へ直接接続できないため、link で
+#    プーラー（IPv4）経由の接続設定を作ってから db push する
 # ---------------------------------------------------------------------------
 set +e
-"$supabase_bin" db push --dry-run --include-all --project-ref "$ref" --output-format json --yes \
-  > "$out/dry-run.json" 2> "$out/dry-run.log"
+"$supabase_bin" link --project-ref "$ref" --yes > "$out/dry-run.log" 2>&1
 code=$?
+if [ "$code" -eq 0 ]; then
+  "$supabase_bin" db push --dry-run --include-all --output-format json --yes \
+    > "$out/dry-run.json" 2>> "$out/dry-run.log"
+  code=$?
+fi
 set -e
 
 if [ "$code" -ne 0 ]; then
@@ -46,7 +52,7 @@ if [ "$code" -ne 0 ]; then
     echo "$marker"
     echo "## Supabase マイグレーション dry-run：失敗"
     echo
-    echo "コミット \`${sha:0:7}\`、プロジェクト \`$ref\`。\`supabase db push --dry-run --include-all\` が終了コード $code で失敗しました。"
+    echo "コミット \`${sha:0:7}\`、プロジェクト \`$ref\`。\`supabase link\` → \`supabase db push --dry-run --include-all\` が終了コード $code で失敗しました。"
     echo
     echo '```text'
     tail -c 6000 "$out/dry-run.log" | sed 's/\x1b\[[0-9;]*m//g'
@@ -102,7 +108,7 @@ fi
   echo "$marker"
   echo "## Supabase マイグレーション dry-run"
   echo
-  echo "コミット \`${sha:0:7}\`、プロジェクト \`$ref\`、コマンド \`supabase db push --dry-run --include-all\`（main マージ後に deploy.yml が同じフラグで適用）。"
+  echo "コミット \`${sha:0:7}\`、プロジェクト \`$ref\`、コマンド \`supabase link\` → \`supabase db push --dry-run --include-all\`（main マージ後に deploy.yml が同じ手順で適用）。"
   echo
   if [ "$pending_count" -eq 0 ]; then
     echo "適用予定のマイグレーションはありません。リモートは最新です。"
