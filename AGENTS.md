@@ -34,6 +34,14 @@
 
 それ以外はオーナー承認を待つ。
 
+## 存在する GitHub Secrets（値は読めない。名前だけ知っておく）
+
+- `SUPABASE_URL` — `https://<project-id>.supabase.co`
+- `SUPABASE_SECRET_KEY` — `sb_secret_...`（RLSを無視できる。クローラーの書き込み専用。フロントに出さない）
+- `FIREBASE_SERVICE_ACCOUNT` — デプロイ用サービスアカウントJSON
+
+publishable key（`sb_publishable_...`）は公開してよい鍵なので Secrets ではなくコードに置く。
+
 ## 技術規約
 
 - Go：標準ライブラリ優先、`context` を必ず通す、型付きエラー。テストは `go test ./...`
