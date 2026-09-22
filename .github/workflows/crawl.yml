@@ -22,10 +22,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  moppy:
-    name: moppy
+  # サイトごとに別ジョブ（別ランナー）で並列に走る。対象サイトが違うので相互に負荷はかからず、
+  # 各ジョブ内では policy の 3 秒間隔を守る。1 サイトが失敗しても他は続ける
+  crawl:
+    name: ${{ matrix.site }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        site: [moppy, hapitas]
     defaults:
       run:
         working-directory: crawler
@@ -41,4 +47,4 @@ jobs:
           cache-dependency-path: crawler/go.sum
 
       - name: crawl
-        run: go run ./cmd/crawler -site moppy ${{ inputs.dry_run == true && '-dry-run' || '' }}
+        run: go run ./cmd/crawler -site ${{ matrix.site }} ${{ inputs.dry_run == true && '-dry-run' || '' }}
