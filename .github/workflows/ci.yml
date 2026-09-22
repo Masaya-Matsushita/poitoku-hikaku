@@ -28,9 +28,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: .tool-versions
-          # 標準ライブラリのみで go.sum が無いため無効化。依存が増えたら
-          # cache-dependency-path: crawler/go.sum を指定して有効にする
-          cache: false
+          cache-dependency-path: crawler/go.sum
 
       - name: gofmt
         run: |

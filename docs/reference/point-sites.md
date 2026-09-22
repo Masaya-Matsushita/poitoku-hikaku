@@ -27,29 +27,36 @@
 | 紹介報酬（紹介者） | 300P + 紹介相手の獲得ポイントの最大10% |
 | 紹介報酬（被紹介者） | 2,000P（ミッションクリア時） |
 
-#### クローリング情報
+#### クローリング情報（2026-09-22 再検証。実装は `crawler/sites/moppy.yaml`）
 
 | 項目 | 内容 |
 |------|------|
-| 取得方法 | 検索結果ページのHTMLをパース |
-| 対象URL | `https://pc.moppy.jp/search/?word={keyword}` |
-| データ埋め込み | ✅ HTMLに直接埋め込み |
-| JS実行 | 不要 |
-| ポイント要素 | `<em class="a-list__item__point">10,000P</em>` |
+| 取得方法 | カテゴリ一覧の AJAX 断片をパース（検索結果は使わない。全カテゴリを巡回できる） |
+| カテゴリ発見 | `GET /ajax/category/get_menu.php` → 「広告ジャンルで探す」の親子カテゴリ 93 件（`/category/list.php?parent_category=N&child_category=N`）。目的別カテゴリ 11 件はジャンルと重複するので対象外 |
+| 一覧取得 | `GET /ajax/category/get_list.php?parent_category=N&child_category=N&objective_category=0&current_page=N&af_sorter=1&exclude_purchased=`。30 件/ページ、最終ページ番号は `.a-pagination__list a[current]` の最大値。範囲外のページは 0 件を返す |
+| 必要ヘッダ | `X-Requested-With: XMLHttpRequest`（無いと 200 で空応答）。Cookie は不要 |
+| JS実行 | 不要（断片はサーバー側で描画済み） |
+| 案件要素 | `li.m-list__item > a.block__link[href]`、案件名 `h3.a-list__item__title`、還元額 `em.a-list__item__point`（"10,000P" または "1.0%"） |
+| 詳細URL | `/ad/detail.php?site_id=N`（ショッピング系は `/shopping/detail.php?site_id=N`）。`track_ref` 等の追跡パラメータは落とし、特集枠の `s_id` は同じ ID なので `site_id` に寄せる |
+| 旧URL | `/ad/?c_id=N`、`/ad/?m_id=N`（sitemap.xml に残る 2010 年の URL）はランキングやトップへリダイレクトされ、使えない。カテゴリページ `/category/list.php` 本体は一覧を JS で読むため、断片を直接取る |
 
-#### robots.txt
+#### robots.txt（2026-09-22 取得。`crawler/testdata/moppy/robots.txt`）
 
 ```
 User-agent: *
+Disallow: /notfound.php
+Disallow: /error.php
+Disallow: /work.php
 Disallow: /ad/j.php
 Disallow: /ad/r.php
+Disallow: /receive/
+Disallow: /img/
 Allow: /
 
-# /search/ は許可
-# /ad/detail.php は許可
+Sitemap: https://pc.moppy.jp/sitemap.xml
 ```
 
-**判定**: ✅ クローリング可能
+**判定**: ✅ クローリング可能（`/ajax/category/*` と `/ad/detail.php` は許可。クローラーが起動時に取得・検証する）
 
 ---
 

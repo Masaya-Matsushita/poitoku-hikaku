@@ -51,6 +51,7 @@ publishable key（`sb_publishable_...`）は公開してよい鍵なので Secre
 - ツールのバージョンは `.tool-versions`（asdf）で固定し、CI も同じファイルを読む。上げる時はここを変える
 - PR を出す前にローカルで CI と同じ検証を通す：`crawler/` で `gofmt -l .`（出力なし）・`go vet ./...`・`go test ./...`、`web/` で `npm run lint`・`npm run typecheck`・`npm test`・`npm run build`
 - クローラーの間隔・停止条件・User-Agent は `crawler/internal/policy` の定数だけを参照する。独自のリテラルを持たない
+- セレクタは `crawler/sites/<site>.yaml` に置き、Go コードにサイト固有の値を書かない。変更は `crawler/testdata/` のフィクスチャでテストが通ること。実サイトへの確認は `go run ./cmd/crawler -site <site> -dry-run`（policy の間隔で数百リクエスト飛ぶ。1 回で済ませる）
 - 過度な抽象化をしない。3回同じことを書いてから共通化する
 - コミットメッセージ・コメントは日本語可。1コミット＝1論理変更
 - ドキュメントの変更は同じPRに含める
