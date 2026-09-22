@@ -34,6 +34,9 @@ listing:
   item_selector: .o-list--portrait .m-list__item
   name_selector: .a-list__item__title
   reward_selector: .a-list__item__point
+  # 還元額が無い案件（ポイント対象外）は .a-list__item__point の代わりにこの要素に「ポイント対象外」と出る。
+  # 空のままにすると抽出失敗に数えられるので、文言を拾って 0 ポイントとして扱う（2026-09-22 に 16 件）
+  reward_fallback_selector: .a-list__item__benefit
   link_selector: a.block__link
   pagination_selector: .a-pagination__list a
   pagination_attr: current

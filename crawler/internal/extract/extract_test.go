@@ -90,6 +90,32 @@ func TestMoppyShoppingListingHasPercentRewards(t *testing.T) {
 	}
 }
 
+// ポイント対象外の案件は .a-list__item__point が無く .a-list__item__benefit に文言が出る。
+// 空文字（抽出失敗扱い）ではなく文言を拾い、0 ポイントとして数値化する。
+func TestMoppyNoRewardOffersUseFallback(t *testing.T) {
+	d := loadMoppy(t)
+	doc, err := Parse(fixture(t, "list_furusato_p1.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, skipped, err := Items(doc, d.Listing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 5 || skipped != 0 {
+		t.Fatalf("items = %d, skipped = %d, want 5 / 0", len(items), skipped)
+	}
+	for _, it := range items {
+		if it.RewardRaw != "ポイント対象外" {
+			t.Errorf("%s: RewardRaw = %q, want ポイント対象外", it.Name, it.RewardRaw)
+		}
+		r := ParseReward(it.RewardRaw)
+		if r.Points == nil || *r.Points != 0 || r.Percent != nil {
+			t.Errorf("%s: ParseReward = %s, want points=0", it.Name, fmtReward(r))
+		}
+	}
+}
+
 func TestMoppyEmptyPage(t *testing.T) {
 	d := loadMoppy(t)
 	doc, err := Parse(fixture(t, "list_empty.html"))
@@ -200,6 +226,8 @@ func TestParseReward(t *testing.T) {
 		{"0.5％", nil, f(0.5)},
 		{"1,000pt", i(1000), nil},
 		{"1000ポイント", i(1000), nil},
+		{"ポイント対象外", i(0), nil},
+		{"対象外", i(0), nil},
 		{"", nil, nil},
 		{"要確認", nil, nil},
 		{"P", nil, nil},

@@ -50,6 +50,12 @@ func Items(doc *html.Node, l site.Listing) (items []Item, skipped int, err error
 	if err != nil {
 		return nil, 0, fmt.Errorf("extract: link_selector: %w", err)
 	}
+	var fallbackSel cascadia.Sel
+	if l.RewardFallbackSelector != "" {
+		if fallbackSel, err = cascadia.Parse(l.RewardFallbackSelector); err != nil {
+			return nil, 0, fmt.Errorf("extract: reward_fallback_selector: %w", err)
+		}
+	}
 
 	for _, n := range cascadia.QueryAll(doc, itemSel) {
 		name := Text(cascadia.Query(n, nameSel))
@@ -58,9 +64,14 @@ func Items(doc *html.Node, l site.Listing) (items []Item, skipped int, err error
 			skipped++
 			continue
 		}
+		reward := Text(cascadia.Query(n, rewardSel))
+		if reward == "" && fallbackSel != nil {
+			// 還元額の要素が無い案件（ポイント対象外など）は代替要素の文言を還元額として記録する
+			reward = Text(cascadia.Query(n, fallbackSel))
+		}
 		items = append(items, Item{
 			Name:      name,
-			RewardRaw: Text(cascadia.Query(n, rewardSel)),
+			RewardRaw: reward,
 			Href:      href,
 		})
 	}
