@@ -26,6 +26,8 @@ AI主導で開発・運用する実験プロジェクト。
 ```
 crawler/              Go クローラー（go.mod はここ）
   cmd/crawler/        エントリポイント（-site moppy [-dry-run]）
+  cmd/report/         日次レポート生成（-date YYYY-MM-DD -out reports/YYYY-MM-DD.md）
+  internal/report/    KPI の計算と Markdown 描画（ゴールデンファイルでテスト）
   internal/policy/    加害防止の固定値（3秒間隔・429/403 停止・UA）と、crawl.yml が日次であることのテスト
   internal/site/      sites/*.yaml の読込と検証
   internal/robots/    robots.txt の解釈
@@ -41,8 +43,10 @@ supabase/
 .github/workflows/
   ci.yml              PR と main：go test / vitest / lint。migrations 変更時は Supabase の dry-run を PR コメントに
   deploy.yml          main への push：supabase db push → Firebase Hosting へデプロイ
-  crawl.yml           毎日 03:00 JST：クロールして Supabase に保存（workflow_dispatch で dry-run 可）
+  crawl.yml           毎日 03:00 JST：クロールして Supabase に保存（workflow_dispatch で dry-run 可）。完了後に report.yml を呼ぶ
+  report.yml          crawl_logs から reports/YYYY-MM-DD.md を生成し、PR を作って自動マージ（手動再生成は workflow_dispatch）
   （weekly-backup は今後追加）
+reports/              自動生成の日次 KPI レポート。手で編集しない。判定と要確認の項目がファイル先頭にある
 .github/scripts/      ワークフローから呼ぶスクリプト（dry-run のコメント生成、破壊的 SQL の検出）
 firebase.json         Hosting 設定（公開ディレクトリは web/dist）
 .tool-versions        Go / Node のバージョン固定（asdf）。CI もこれを読む
