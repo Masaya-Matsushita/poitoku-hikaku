@@ -1,0 +1,90 @@
+# 日次レポート：crawl_logs から reports/YYYY-MM-DD.md を生成し、PR を作って自動マージする。
+# 通常は crawl.yml のクロール完了後に呼ばれる（workflow_call）。手動で作り直す時は workflow_dispatch。
+#
+# reports/** は自動マージしてよい範囲（AGENTS.md）。main への直 push はせず PR 経由にする。
+# GITHUB_TOKEN が作った PR には CI（pull_request）が自動では走らないため、ci.yml を workflow_dispatch で
+# 明示的に起動して必須チェック（go / web）を満たし、gh pr merge --auto に任せる。
+name: Report
+
+on:
+  workflow_call:
+    inputs:
+      date:
+        description: '対象日 YYYY-MM-DD（JST）。空なら今日'
+        type: string
+        default: ''
+  workflow_dispatch:
+    inputs:
+      date:
+        description: '対象日 YYYY-MM-DD（JST）。空なら今日'
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: report
+  cancel-in-progress: false
+
+jobs:
+  report:
+    name: report
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: .tool-versions
+          cache-dependency-path: crawler/go.sum
+
+      - name: 生成
+        id: gen
+        working-directory: crawler
+        env:
+          INPUT_DATE: ${{ inputs.date }}
+        run: |
+          date="$INPUT_DATE"
+          if [ -z "$date" ]; then date="$(TZ=Asia/Tokyo date +%F)"; fi
+          go run ./cmd/report -date "$date" -out "../reports/$date.md"
+          echo "date=$date" >> "$GITHUB_OUTPUT"
+
+      - name: PR を作って自動マージ
+        env:
+          DATE: ${{ steps.gen.outputs.date }}
+        run: |
+          file="reports/$DATE.md"
+          if git diff --quiet -- "$file" && [ -z "$(git status --porcelain -- "$file")" ]; then
+            echo "$file に変更なし。PR は作らない"
+            exit 0
+          fi
+          branch="report/$DATE"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$branch"
+          git add "$file"
+          git commit -m "report: $DATE の日次レポート"
+          git push --force origin "$branch"
+
+          pr="$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')"
+          if [ -z "$pr" ]; then
+            gh pr create --base main --head "$branch" \
+              --title "report: $DATE" \
+              --body "$(printf '%s\n' "crawl.yml の report ジョブが生成した日次レポート。判定と要確認の項目はファイル先頭。" "" "reports/** は自動マージの範囲（AGENTS.md）。CI 通過後に自動でマージされる。")"
+            pr="$(gh pr list --head "$branch" --state open --json number --jq '.[0].number')"
+          fi
+
+          # GITHUB_TOKEN が作った PR には CI が自動で走らないので明示的に起動する（必須チェック go / web）
+          gh workflow run ci.yml --ref "$branch"
+          gh pr merge "$pr" --auto --squash --delete-branch
+          echo "PR #$pr を作成し、CI 通過後の自動マージを予約した"

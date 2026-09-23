@@ -7,6 +7,8 @@ on:
   pull_request:
   push:
     branches: [main]
+  # report.yml が GITHUB_TOKEN で作った PR に必須チェックを付けるために手動起動する
+  workflow_dispatch:
 
 permissions:
   contents: read

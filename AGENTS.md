@@ -33,6 +33,7 @@
 - `docs/**`、`reports/**`
 
 それ以外はオーナー承認を待つ。`destructive-migration` ラベルが付いた PR は、上記に該当しても自動マージしない。
+`reports/` は `report.yml` が毎日生成して自動マージする。手で編集しない。
 
 ## 存在する GitHub Secrets（値は読めない。名前だけ知っておく）
 

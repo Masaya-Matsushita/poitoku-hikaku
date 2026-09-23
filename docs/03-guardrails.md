@@ -12,7 +12,7 @@
 | main への直push禁止 | GitHub Branch protection（PR必須、CI必須） |
 | 本番デプロイは main からのみ | GitHub Actions の deploy job を `if: github.ref == 'refs/heads/main'` |
 | テスト通過必須 | CI で `go test` / `vitest` / lint。失敗したPRはマージ不可 |
-| AIの自動マージ範囲 | 初期は **セレクタ定義（`crawler/sites/*.yaml`）とドキュメントのみ自動マージ可**。それ以外はオーナー承認。`destructive-migration` ラベルが付いた PR は範囲内でも自動マージ不可 |
+| AIの自動マージ範囲 | 初期は **セレクタ定義（`crawler/sites/*.yaml`）とドキュメントのみ自動マージ可**。それ以外はオーナー承認。`destructive-migration` ラベルが付いた PR は範囲内でも自動マージ不可。`reports/**` の日次レポート PR は `report.yml`（GitHub Actions）が作成し CI 通過後に自動マージする |
 | シークレット | GitHub Secrets のみ。`.env*` は `.gitignore`。Claude は `.env*` を読まない（AGENTS.md に明記） |
 
 ### クローラー（対象サイトへの加害防止）

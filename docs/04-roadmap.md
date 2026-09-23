@@ -19,7 +19,7 @@
 - [x] Go クローラー：ハピタス（2026-09-23。個別ページではなくカテゴリページ 39 件を人気順・高ポイント順の 2 通りで巡回。`crawler/sites/hapitas.yaml`）
 - [x] セレクタを YAML 定義に分離（`crawler/sites/moppy.yaml`。フィクスチャでのテストが通れば自動マージ可）
 - [x] GitHub Actions 日次 cron で本番稼働開始 ← **ここで時計が回り始める**（`crawl.yml`、毎日 03:00 JST。マージ後の最初の実行から）
-- [ ] `crawl_logs` から KPI を日次レポート生成
+- [x] `crawl_logs` から KPI を日次レポート生成（2026-09-23。`crawl.yml` の report ジョブが `reports/YYYY-MM-DD.md` を生成し PR → 自動マージ。`crawler/cmd/report`）
 
 ## Phase 2：公開（データが貯まり始めた直後）
 
