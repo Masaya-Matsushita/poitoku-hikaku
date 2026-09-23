@@ -8,9 +8,9 @@ Supabase（PostgreSQL）のスキーマを `migrations/` に置く。プロジ�
 |---|---|---|
 | `sites` | 対象ポイントサイトのマスタ。ポイント単価を持つ | マイグレーション（初期データ） |
 | `offers` | サイトごとの案件。1 案件 1 行。`unique (site_id, url)` | クローラー（upsert） |
-| `offer_snapshots` | 日次の還元額履歴。1 案件 × 1 日 = 1 行 | クローラー（insert） |
+| `offer_snapshots` | 還元額の変化履歴（区間、ADR-0005）。`reward_raw` が変わった時だけ 1 行。`valid_from`〜`valid_to`（null = 現在有効） | クローラー（前の区間を閉じて insert） |
 | `crawl_logs` | クロール実行ログ。KPI（成功率・抽出精度）の一次データ | クローラー |
-| `current_offers`（view） | 案件ごとの最新還元額と円換算 | — |
+| `current_offers`（view） | 案件ごとの現在の還元額（`valid_to is null`）と円換算、`reward_since` | — |
 
 読み取りは `sites` / `offers` / `offer_snapshots` を anon（publishable key）に公開する。
 `crawl_logs` は公開しない。書き込みポリシーは作らず、secret key（RLS を通らない）を持つクローラーだけが書く。
