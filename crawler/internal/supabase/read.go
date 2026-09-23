@@ -62,13 +62,24 @@ func (c *Client) CrawlLogs(ctx context.Context, from, to string) ([]report.Crawl
 	return out, nil
 }
 
-// EmptyRewardCount は crawledOn の offer_snapshots のうち、reward_raw が空（真の抽出失敗）の行数を
-// サイトごとに返す（report.Source）。offers を内部結合して site_id で絞る。
+// EmptyRewardCount は crawledOn に掲載されていた案件（offers.last_seen_on = crawledOn）のうち、
+// 現在有効な還元額（valid_to が null）の reward_raw が空、つまり真の抽出失敗の件数を返す（report.Source）。
 func (c *Client) EmptyRewardCount(ctx context.Context, siteID, crawledOn string) (int, error) {
 	return c.count(ctx, "offer_snapshots", url.Values{
+		"select":              {"id,offers!inner(site_id,last_seen_on)"},
+		"valid_to":            {"is.null"},
+		"reward_raw":          {"eq."},
+		"offers.site_id":      {"eq." + siteID},
+		"offers.last_seen_on": {"eq." + crawledOn},
+	})
+}
+
+// ChangedCount は crawledOn に始まった区間の数 = 還元額が変わった案件と新規案件の合計を返す（report.Source）。
+// ADR-0005 の容量試算（1 日あたりの変化率）を実測するための指標。
+func (c *Client) ChangedCount(ctx context.Context, siteID, crawledOn string) (int, error) {
+	return c.count(ctx, "offer_snapshots", url.Values{
 		"select":         {"id,offers!inner(site_id)"},
-		"crawled_on":     {"eq." + crawledOn},
-		"reward_raw":     {"eq."},
+		"valid_from":     {"eq." + crawledOn},
 		"offers.site_id": {"eq." + siteID},
 	})
 }

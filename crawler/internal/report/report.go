@@ -48,8 +48,10 @@ type Source interface {
 	Sites(ctx context.Context) ([]Site, error)
 	// CrawlLogs は crawled_on が from〜to（両端含む、YYYY-MM-DD）の行を日付・id 順に返す。
 	CrawlLogs(ctx context.Context, from, to string) ([]CrawlLog, error)
-	// EmptyRewardCount は crawledOn の offer_snapshots のうち reward_raw が空の行数（真の抽出失敗）。
+	// EmptyRewardCount は crawledOn に掲載されていた案件のうち、現在有効な還元額の reward_raw が空の件数（真の抽出失敗）。
 	EmptyRewardCount(ctx context.Context, siteID, crawledOn string) (int, error)
+	// ChangedCount は crawledOn に始まった区間の数（還元額が変わった案件 + 新規案件。ADR-0005 の変化率の実測）。
+	ChangedCount(ctx context.Context, siteID, crawledOn string) (int, error)
 }
 
 // KPI の閾値（docs/02-kpi.md、ADR-0003）。
@@ -67,6 +69,8 @@ type SiteDay struct {
 	PrevOffers   int  // 前日（最後の実行）の案件数。無ければ -1
 	EmptyRewards int  // reward_raw が空の行数（真の抽出失敗）
 	EmptyKnown   bool // EmptyRewards を取得できたか
+	Changed      int  // 当日に始まった区間の数（還元額の変化 + 新規）
+	ChangedKnown bool // Changed を取得できたか
 }
 
 // ParsedRate は数値化率。案件 0 件なら 0。
@@ -161,6 +165,12 @@ func Build(ctx context.Context, src Source, date string, now time.Time, windowDa
 				r.Warnings = append(r.Warnings, fmt.Sprintf("%s: 真の抽出失敗の件数を取得できなかった（%v）", s.Name, err))
 			} else {
 				d.EmptyRewards, d.EmptyKnown = n, true
+			}
+			ch, err := src.ChangedCount(ctx, s.ID, date)
+			if err != nil {
+				r.Warnings = append(r.Warnings, fmt.Sprintf("%s: 還元額の変化件数を取得できなかった（%v）", s.Name, err))
+			} else {
+				d.Changed, d.ChangedKnown = ch, true
 			}
 		}
 		r.Sites = append(r.Sites, d)
@@ -260,11 +270,11 @@ func Render(r *Report) string {
 	}
 
 	w("## サイト別（%s）\n\n", r.Date)
-	w("| サイト | status | 案件数 | 前日比 | 数値化率 | 真の抽出失敗 | リクエスト | 所要 | 打ち切り理由 | 版 |\n")
-	w("|---|---|---:|---:|---:|---:|---:|---:|---|---|\n")
+	w("| サイト | status | 案件数 | 前日比 | 数値化率 | 真の抽出失敗 | 還元額の変化 | リクエスト | 所要 | 打ち切り理由 | 版 |\n")
+	w("|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|\n")
 	for _, d := range r.Sites {
 		if d.Log == nil {
-			w("| %s | 未実行 | - | - | - | - | - | - | - | - |\n", d.Site.Name)
+			w("| %s | 未実行 | - | - | - | - | - | - | - | - | - |\n", d.Site.Name)
 			continue
 		}
 		l := d.Log
@@ -276,11 +286,15 @@ func Render(r *Report) string {
 		if d.EmptyKnown {
 			empty = fmt.Sprintf("%d", d.EmptyRewards)
 		}
-		w("| %s | %s | %s | %s | %s | %s | %d | %s | %s | %s |\n",
-			d.Site.Name, l.Status, num(l.OfferCount), diff, pct(d.ParsedRate()), empty, l.RequestCount,
+		changed := "-"
+		if d.ChangedKnown {
+			changed = num(d.Changed)
+		}
+		w("| %s | %s | %s | %s | %s | %s | %s | %d | %s | %s | %s |\n",
+			d.Site.Name, l.Status, num(l.OfferCount), diff, pct(d.ParsedRate()), empty, changed, l.RequestCount,
 			duration(l), dash(l.AbortReason), dash(l.CrawlerVersion))
 	}
-	w("\n")
+	w("\n「還元額の変化」は当日に始まった区間の数（還元額が変わった案件 + 新規案件）。ADR-0005 の容量試算の前提（変化率）を実測する。\n\n")
 
 	w("## KPI\n\n")
 	w("| KPI | 目標 | 直近 7 日 | 直近 %d 日 |\n", r.Month.Days)

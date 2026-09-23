@@ -11,10 +11,15 @@ import (
 )
 
 type fakeSource struct {
-	sites []Site
-	logs  []CrawlLog
-	empty map[string]int // "site|date" → 件数
-	err   error
+	sites   []Site
+	logs    []CrawlLog
+	empty   map[string]int // "site|date" → 件数
+	changed map[string]int // "site|date" → 件数
+	err     error
+}
+
+func (f *fakeSource) ChangedCount(_ context.Context, siteID, date string) (int, error) {
+	return f.changed[siteID+"|"+date], nil
 }
 
 func (f *fakeSource) Sites(context.Context) ([]Site, error) { return f.sites, f.err }
@@ -72,7 +77,8 @@ func scenario() *fakeSource {
 			log(4, "hapitas", "2026-09-23", "success", 2773, 2773, 0),
 			l24m, l24h,
 		},
-		empty: map[string]int{"moppy|2026-09-24": 2},
+		empty:   map[string]int{"moppy|2026-09-24": 2},
+		changed: map[string]int{"moppy|2026-09-24": 57, "hapitas|2026-09-24": 900},
 	}
 }
 
@@ -89,7 +95,7 @@ func TestBuildComputesKPIsAndWarnings(t *testing.T) {
 	if h.Site.ID != "hapitas" || m.Site.ID != "moppy" {
 		t.Fatalf("順序 = %s, %s", h.Site.ID, m.Site.ID)
 	}
-	if m.Log == nil || m.Log.ID != 5 || m.PrevOffers != 1791 || !m.EmptyKnown || m.EmptyRewards != 2 {
+	if m.Log == nil || m.Log.ID != 5 || m.PrevOffers != 1791 || !m.EmptyKnown || m.EmptyRewards != 2 || !m.ChangedKnown || m.Changed != 57 {
 		t.Errorf("moppy = %+v", m)
 	}
 	if h.Log == nil || h.Log.Status != "aborted" || h.PrevOffers != 2773 {
