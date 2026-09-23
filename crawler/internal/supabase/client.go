@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -187,18 +188,47 @@ type offerRow struct {
 	LastSeenOn  string  `json:"last_seen_on"`
 }
 
+// snapshotRow は offer_snapshots に新しく作る区間（valid_to は null = 現在有効）。
 type snapshotRow struct {
 	OfferUUID     string   `json:"offer_id"`
-	CrawledOn     string   `json:"crawled_on"`
+	ValidFrom     string   `json:"valid_from"`
 	RewardRaw     string   `json:"reward_raw"`
 	RewardPoints  *int64   `json:"reward_points"`
 	RewardPercent *float64 `json:"reward_percent"`
 }
 
+// offerState は既存 offers の行（url をキーに引く）。
+type offerState struct {
+	ID          string `json:"id"`
+	URL         string `json:"url"`
+	FirstSeenOn string `json:"first_seen_on"`
+	LastSeenOn  string `json:"last_seen_on"`
+}
+
+// currentSnapshot は案件の現在有効な区間（valid_to が null の行）。
+type currentSnapshot struct {
+	ID        int64  `json:"id"`
+	OfferID   string `json:"offer_id"`
+	ValidFrom string `json:"valid_from"`
+	RewardRaw string `json:"reward_raw"`
+}
+
+// patchChunkSize は valid_to を閉じる時に 1 リクエストで指定する id の数（URL 長の都合で upsert より小さい）。
+const patchChunkSize = 200
+
 // SaveOffers は offers を upsert（first_seen_on は既存値を保持、last_seen_on は crawledOn）し、
-// offer_snapshots に crawledOn の行を書く（同日の再実行は上書き）。
+// offer_snapshots を区間方式（ADR-0005）で更新する：
+//   - 現在有効な区間が無い案件（新規）→ valid_from = crawledOn の行を作る
+//   - 現在有効な区間の reward_raw と同じ → 何もしない（掲載継続は offers.last_seen_on が表す）
+//   - reward_raw が変わった → 前の区間を「前回観測日（更新前の last_seen_on）」で閉じ、新しい区間を作る
+//
+// 同日の再実行は冪等（同じ還元額なら行が増えない）。
 func (c *Client) SaveOffers(ctx context.Context, siteID, crawledOn string, offers []crawl.Offer) error {
 	existing, err := c.existingOffers(ctx, siteID)
+	if err != nil {
+		return err
+	}
+	current, err := c.currentSnapshots(ctx, siteID)
 	if err != nil {
 		return err
 	}
@@ -206,14 +236,16 @@ func (c *Client) SaveOffers(ctx context.Context, siteID, crawledOn string, offer
 	// URL の重複は呼び出し側で除いてある前提だが、upsert が同一行を 2 度触ると失敗するので念のため
 	seen := map[string]bool{}
 	rows := make([]offerRow, 0, len(offers))
+	deduped := make([]crawl.Offer, 0, len(offers))
 	for _, o := range offers {
 		if seen[o.URL] {
 			continue
 		}
 		seen[o.URL] = true
+		deduped = append(deduped, o)
 		first := crawledOn
-		if prev, ok := existing[o.URL]; ok && prev != "" {
-			first = prev
+		if prev, ok := existing[o.URL]; ok && prev.FirstSeenOn != "" {
+			first = prev.FirstSeenOn
 		}
 		row := offerRow{SiteID: siteID, Name: o.Name, URL: o.URL, FirstSeenOn: first, LastSeenOn: crawledOn}
 		if o.ExternalID != "" {
@@ -244,26 +276,62 @@ func (c *Client) SaveOffers(ctx context.Context, siteID, crawledOn string, offer
 		}
 	}
 
-	snaps := make([]snapshotRow, 0, len(offers))
-	for _, o := range offers {
+	// 変化の判定。閉じる区間は valid_to の日付ごとにまとめて更新する（ほとんどは同じ日）
+	var inserts []snapshotRow
+	closeByDate := map[string][]int64{}
+	for _, o := range deduped {
 		id, ok := ids[o.URL]
 		if !ok {
 			return fmt.Errorf("supabase: upsert 後に %s の id が返らない", o.URL)
 		}
-		snaps = append(snaps, snapshotRow{
+		cur, has := current[id]
+		if has && cur.RewardRaw == o.RewardRaw {
+			continue
+		}
+		if has {
+			// 前の還元額を最後に観測した日 = 更新前の last_seen_on。区間の開始日より前にはしない
+			validTo := existing[o.URL].LastSeenOn
+			if validTo == "" || validTo > crawledOn {
+				validTo = crawledOn
+			}
+			if validTo < cur.ValidFrom {
+				validTo = cur.ValidFrom
+			}
+			closeByDate[validTo] = append(closeByDate[validTo], cur.ID)
+		}
+		inserts = append(inserts, snapshotRow{
 			OfferUUID:     id,
-			CrawledOn:     crawledOn,
+			ValidFrom:     crawledOn,
 			RewardRaw:     o.RewardRaw,
 			RewardPoints:  o.RewardPoints,
 			RewardPercent: o.RewardPercent,
 		})
 	}
-	for start := 0; start < len(snaps); start += chunkSize {
-		end := min(start+chunkSize, len(snaps))
-		err := c.do(ctx, http.MethodPost, "offer_snapshots",
-			url.Values{"on_conflict": {"offer_id,crawled_on"}},
-			map[string]string{"Prefer": "resolution=merge-duplicates,return=minimal"},
-			snaps[start:end], nil)
+
+	dates := make([]string, 0, len(closeByDate))
+	for d := range closeByDate {
+		dates = append(dates, d)
+	}
+	sort.Strings(dates)
+	for _, d := range dates {
+		snapIDs := closeByDate[d]
+		for start := 0; start < len(snapIDs); start += patchChunkSize {
+			end := min(start+patchChunkSize, len(snapIDs))
+			err := c.do(ctx, http.MethodPatch, "offer_snapshots",
+				url.Values{"id": {"in.(" + joinInt64(snapIDs[start:end]) + ")"}},
+				map[string]string{"Prefer": "return=minimal"},
+				map[string]any{"valid_to": d}, nil)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	for start := 0; start < len(inserts); start += chunkSize {
+		end := min(start+chunkSize, len(inserts))
+		err := c.do(ctx, http.MethodPost, "offer_snapshots", nil,
+			map[string]string{"Prefer": "return=minimal"},
+			inserts[start:end], nil)
 		if err != nil {
 			return err
 		}
@@ -271,28 +339,59 @@ func (c *Client) SaveOffers(ctx context.Context, siteID, crawledOn string, offer
 	return nil
 }
 
-// existingOffers はサイトの既存 offers を url → first_seen_on で返す。
-func (c *Client) existingOffers(ctx context.Context, siteID string) (map[string]string, error) {
-	out := map[string]string{}
+// existingOffers はサイトの既存 offers を url → 行で返す。
+func (c *Client) existingOffers(ctx context.Context, siteID string) (map[string]offerState, error) {
+	out := map[string]offerState{}
 	for from := 0; ; from += pageSize {
-		var rows []struct {
-			URL         string `json:"url"`
-			FirstSeenOn string `json:"first_seen_on"`
-		}
+		var rows []offerState
 		err := c.do(ctx, http.MethodGet, "offers",
-			url.Values{"site_id": {"eq." + siteID}, "select": {"url,first_seen_on"}, "order": {"id.asc"}},
+			url.Values{"site_id": {"eq." + siteID}, "select": {"id,url,first_seen_on,last_seen_on"}, "order": {"id.asc"}},
 			map[string]string{"Range-Unit": "items", "Range": fmt.Sprintf("%d-%d", from, from+pageSize-1)},
 			nil, &rows)
 		if err != nil {
 			return nil, err
 		}
 		for _, r := range rows {
-			out[r.URL] = r.FirstSeenOn
+			out[r.URL] = r
 		}
 		if len(rows) < pageSize {
 			return out, nil
 		}
 	}
+}
+
+// currentSnapshots はサイトの案件の現在有効な区間（valid_to が null）を offer_id → 行で返す。
+func (c *Client) currentSnapshots(ctx context.Context, siteID string) (map[string]currentSnapshot, error) {
+	out := map[string]currentSnapshot{}
+	for from := 0; ; from += pageSize {
+		var rows []currentSnapshot
+		err := c.do(ctx, http.MethodGet, "offer_snapshots",
+			url.Values{
+				"select":         {"id,offer_id,valid_from,reward_raw,offers!inner(site_id)"},
+				"valid_to":       {"is.null"},
+				"offers.site_id": {"eq." + siteID},
+				"order":          {"id.asc"},
+			},
+			map[string]string{"Range-Unit": "items", "Range": fmt.Sprintf("%d-%d", from, from+pageSize-1)},
+			nil, &rows)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range rows {
+			out[r.OfferID] = r
+		}
+		if len(rows) < pageSize {
+			return out, nil
+		}
+	}
+}
+
+func joinInt64(ids []int64) string {
+	parts := make([]string, len(ids))
+	for i, id := range ids {
+		parts[i] = strconv.FormatInt(id, 10)
+	}
+	return strings.Join(parts, ",")
 }
 
 func strPtr(s string) *string { return &s }

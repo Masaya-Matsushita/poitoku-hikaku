@@ -25,13 +25,18 @@ func newReadServer(t *testing.T) (*httptest.Server, *[]string) {
 			w.Write([]byte(`[{"id":3,"site_id":"moppy","crawled_on":"2026-09-23","started_at":"2026-09-22T18:00:10+00:00","finished_at":"2026-09-22T18:08:02+00:00","status":"success","request_count":158,"offer_count":1791,"parsed_count":1785,"error_count":0,"abort_reason":null,"errors":[],"crawler_version":"5cad0a6"},` +
 				`{"id":4,"site_id":"hapitas","crawled_on":"2026-09-23","started_at":"2026-09-22T18:00:12+00:00","finished_at":null,"status":"running","request_count":0,"offer_count":0,"parsed_count":0,"error_count":0,"abort_reason":null,"errors":[],"crawler_version":null}]`))
 		case "/rest/v1/offer_snapshots":
-			if r.URL.Query().Get("offers.site_id") == "eq.moppy" {
+			q := r.URL.Query()
+			switch {
+			case q.Get("offers.site_id") == "eq.moppy" && q.Get("valid_to") == "is.null":
 				w.Header().Set("Content-Range", "0-0/2")
 				w.Write([]byte(`[{"id":1}]`))
-				return
+			case q.Get("offers.site_id") == "eq.moppy" && q.Get("valid_from") == "eq.2026-09-23":
+				w.Header().Set("Content-Range", "0-0/57")
+				w.Write([]byte(`[{"id":1}]`))
+			default:
+				w.Header().Set("Content-Range", "*/0")
+				w.Write([]byte(`[]`))
 			}
-			w.Header().Set("Content-Range", "*/0")
-			w.Write([]byte(`[]`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -84,7 +89,7 @@ func TestEmptyRewardCountUsesContentRange(t *testing.T) {
 		t.Errorf("count = %d, want 2", n)
 	}
 	q := (*seen)[0]
-	for _, want := range []string{"select=id%2Coffers%21inner%28site_id%29", "crawled_on=eq.2026-09-23", "reward_raw=eq.", "offers.site_id=eq.moppy", "prefer=count=exact", "range=0-0"} {
+	for _, want := range []string{"select=id%2Coffers%21inner%28site_id%2Clast_seen_on%29", "valid_to=is.null", "reward_raw=eq.", "offers.site_id=eq.moppy", "offers.last_seen_on=eq.2026-09-23", "prefer=count=exact", "range=0-0"} {
 		if !strings.Contains(q, want) {
 			t.Errorf("クエリに %q が無い: %s", want, q)
 		}
@@ -93,6 +98,17 @@ func TestEmptyRewardCountUsesContentRange(t *testing.T) {
 	n, err = c.EmptyRewardCount(ctx, "hapitas", "2026-09-23")
 	if err != nil || n != 0 {
 		t.Errorf("0 件の Content-Range（*/0）を扱えない: n=%d err=%v", n, err)
+	}
+
+	n, err = c.ChangedCount(ctx, "moppy", "2026-09-23")
+	if err != nil || n != 57 {
+		t.Errorf("ChangedCount = %d, %v, want 57", n, err)
+	}
+	q = (*seen)[2]
+	for _, want := range []string{"valid_from=eq.2026-09-23", "offers.site_id=eq.moppy", "prefer=count=exact"} {
+		if !strings.Contains(q, want) {
+			t.Errorf("ChangedCount のクエリに %q が無い: %s", want, q)
+		}
 	}
 }
 
