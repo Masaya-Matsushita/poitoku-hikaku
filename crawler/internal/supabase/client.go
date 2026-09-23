@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -56,6 +57,20 @@ func (e *APIError) Error() string {
 }
 
 func (c *Client) do(ctx context.Context, method, path string, query url.Values, headers map[string]string, in, out any) error {
+	_, raw, err := c.doRaw(ctx, method, path, query, headers, in)
+	if err != nil {
+		return err
+	}
+	if out != nil && len(raw) > 0 {
+		if err := json.Unmarshal(raw, out); err != nil {
+			return fmt.Errorf("supabase: %s %s の応答を解釈できない: %w", method, path, err)
+		}
+	}
+	return nil
+}
+
+// doRaw はリクエストを送り、2xx なら応答ヘッダと本文を返す。2xx 以外は APIError。
+func (c *Client) doRaw(ctx context.Context, method, path string, query url.Values, headers map[string]string, in any) (http.Header, []byte, error) {
 	u := c.baseURL + "/rest/v1/" + path
 	if len(query) > 0 {
 		u += "?" + query.Encode()
@@ -64,13 +79,13 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	if in != nil {
 		b, err := json.Marshal(in)
 		if err != nil {
-			return fmt.Errorf("supabase: %w", err)
+			return nil, nil, fmt.Errorf("supabase: %w", err)
 		}
 		body = bytes.NewReader(b)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, u, body)
 	if err != nil {
-		return fmt.Errorf("supabase: %w", err)
+		return nil, nil, fmt.Errorf("supabase: %w", err)
 	}
 	req.Header.Set("apikey", c.key)
 	req.Header.Set("Authorization", "Bearer "+c.key)
@@ -83,26 +98,40 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("supabase: %s %s: %w", method, path, err)
+		return nil, nil, fmt.Errorf("supabase: %s %s: %w", method, path, err)
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {
-		return fmt.Errorf("supabase: %s %s: %w", method, path, err)
+		return nil, nil, fmt.Errorf("supabase: %s %s: %w", method, path, err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		msg := string(raw)
 		if len(msg) > 500 {
 			msg = msg[:500] + "…"
 		}
-		return &APIError{Method: method, Path: path, StatusCode: resp.StatusCode, Body: msg}
+		return nil, nil, &APIError{Method: method, Path: path, StatusCode: resp.StatusCode, Body: msg}
 	}
-	if out != nil && len(raw) > 0 {
-		if err := json.Unmarshal(raw, out); err != nil {
-			return fmt.Errorf("supabase: %s %s の応答を解釈できない: %w", method, path, err)
-		}
+	return resp.Header, raw, nil
+}
+
+// count は条件に合う行数を返す（PostgREST の Prefer: count=exact と Content-Range を使い、本文は 1 行だけ取る）。
+func (c *Client) count(ctx context.Context, path string, query url.Values) (int, error) {
+	h, _, err := c.doRaw(ctx, http.MethodGet, path, query,
+		map[string]string{"Prefer": "count=exact", "Range-Unit": "items", "Range": "0-0"}, nil)
+	if err != nil {
+		return 0, err
 	}
-	return nil
+	cr := h.Get("Content-Range") // "0-0/123" または "*/0"
+	i := strings.LastIndexByte(cr, '/')
+	if i < 0 {
+		return 0, fmt.Errorf("supabase: %s の Content-Range が不正: %q", path, cr)
+	}
+	n, err := strconv.Atoi(cr[i+1:])
+	if err != nil {
+		return 0, fmt.Errorf("supabase: %s の Content-Range が不正: %q", path, cr)
+	}
+	return n, nil
 }
 
 // StartCrawlLog は crawl_logs に status=running の行を作る。
