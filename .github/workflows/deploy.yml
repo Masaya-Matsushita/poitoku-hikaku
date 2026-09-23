@@ -8,6 +8,11 @@ name: Deploy
 on:
   push:
     branches: [main]
+    # 日次レポートや docs だけの変更ではデプロイしない（DB もフロントも変わらない）
+    paths-ignore:
+      - 'reports/**'
+      - 'docs/**'
+      - '**.md'
 
 permissions:
   contents: read

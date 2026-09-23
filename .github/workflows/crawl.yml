@@ -48,3 +48,15 @@ jobs:
 
       - name: crawl
         run: go run ./cmd/crawler -site ${{ matrix.site }} ${{ inputs.dry_run == true && '-dry-run' || '' }}
+
+  # クロール後に日次レポート（reports/YYYY-MM-DD.md）を生成し PR → 自動マージ。
+  # 失敗した日こそレポートが要るので always()。dry_run の時は DB に書いていないので作らない
+  report:
+    needs: crawl
+    if: always() && inputs.dry_run != true
+    uses: ./.github/workflows/report.yml
+    secrets: inherit
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
