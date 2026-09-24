@@ -29,7 +29,8 @@
 - [ ] Search Console 連携
 - [ ] ASP（A8.net / afb / アクセストレード）メディア登録・提携申請
 - [ ] ステマ表示、about ページ、紹介コード表示
-- [ ] 夜間 Routine 稼働開始（`docs/05-routines.md`）
+- [x] PR の自動マージ（2026-09-25。CI 全通過・オーナー承認パスに触れない PR を `automerge.yml` が自動マージ。ADR-0006）
+- [ ] 夜間 Routine 稼働開始（`docs/05-routines.md`。nightly-improve は Issue の `ready` を優先度順に消化する設計。ラベル作成と Routine 登録が残り）
 
 ## Phase 3：履歴の価値化（30日以上のデータが貯まってから）
 

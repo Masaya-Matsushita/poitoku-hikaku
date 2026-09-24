@@ -12,7 +12,8 @@
 | main への直push禁止 | GitHub Branch protection（PR必須、CI必須） |
 | 本番デプロイは main からのみ | GitHub Actions の deploy job を `if: github.ref == 'refs/heads/main'` |
 | テスト通過必須 | CI で `go test` / `vitest` / lint。失敗したPRはマージ不可 |
-| AIの自動マージ範囲 | 初期は **セレクタ定義（`crawler/sites/*.yaml`）とドキュメントのみ自動マージ可**。それ以外はオーナー承認。`destructive-migration` ラベルが付いた PR は範囲内でも自動マージ不可。`reports/**` の日次レポート PR は `report.yml`（GitHub Actions）が作成し CI 通過後に自動マージする |
+| AIの自動マージ範囲 | **CI 全通過・`destructive-migration` / `needs-owner-review` ラベルなし・オーナー承認パスに触れない PR は自動マージ**（ADR-0006）。オーナー承認パス：`.github/**`、`crawler/internal/policy/**`、このファイル、`crawler/sites/*.yaml` の新規追加。判定は `automerge.yml`（`ci.yml` の完了で main の版が動く）。満たさない PR には `needs-owner-review` を付ける。AI は自分でマージしない。`reports/**` の日次レポート PR は `report.yml` が作成し CI 通過後に自動マージする |
+| 判定を飛ばしたマージの防止 | 判定済みのコミットに commit status `auto-merge-gate` を付け、Branch protection の必須チェックにする（新しい push の後、古い判定で auto-merge が発火しない） |
 | シークレット | GitHub Secrets のみ。`.env*` は `.gitignore`。Claude は `.env*` を読まない（AGENTS.md に明記） |
 
 ### クローラー（対象サイトへの加害防止）
@@ -45,6 +46,7 @@
 | `SUPABASE_URL` | `crawl.yml`、`report.yml` | 無期限 | — |
 | `SUPABASE_SECRET_KEY` | `crawl.yml`、`report.yml` | 無期限（ローテーション時に更新） | 日次クロールと日次レポート |
 | `FIREBASE_SERVICE_ACCOUNT` | `deploy.yml`（hosting） | 無期限（鍵を失効させない限り） | Hosting デプロイ |
+| `AUTOMERGE_APP_CLIENT_ID` / `AUTOMERGE_APP_PRIVATE_KEY` | `automerge.yml`（auto-merge の有効化・解除） | 無期限（App の秘密鍵を失効させない限り） | 自動マージ。条件を満たす PR に判定の status が付かず止まる（オーナーは管理者権限でマージ可） |
 
 ### データ
 
