@@ -10,7 +10,7 @@
 - [ ] ステマ規制の表示文言確定
 - [ ] ドメイン取得 `poitoku-hikaku.com`
 
-## Phase 1：データパイプライン（最優先、目標：着手から1週間で本番稼働）
+## Phase 1：データパイプライン（最優先、目標：着手から1週間で本番稼働）— **2026-09-25 完了**（着手 2026-09-22）
 
 - [x] リポジトリ初期化、AGENTS.md、CI、Branch protection（2026-09-22。モノレポ雛形 `crawler/` `web/`、`ci.yml`。Branch protection は PR 必須＋required status checks `go` / `web`）
 - [x] Supabase スキーマ（`sites` / `offers` / `offer_snapshots` / `crawl_logs` / `current_offers`。`supabase/migrations/` に作成、設計意図は同ファイル冒頭）
