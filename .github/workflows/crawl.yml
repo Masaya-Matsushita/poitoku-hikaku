@@ -60,3 +60,4 @@ jobs:
       contents: write
       pull-requests: write
       actions: write
+      statuses: write

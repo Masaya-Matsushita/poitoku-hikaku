@@ -27,12 +27,25 @@
 - 破壊的DBマイグレーション（drop / alter ... type / truncate。CI が `destructive-migration` ラベルを付ける）は自動マージしない。適用済みのマイグレーションファイルは編集せず、新しいファイルを積む
 - 対象サイトのコンテンツを転載しない。保存するのは案件名・還元額・URL・カテゴリのみ
 
-## 自動マージしてよい範囲
+## 自動マージしてよい範囲（ADR-0006）
 
-- `crawler/sites/*.yaml`（セレクタ定義。テスト通過が条件）
-- `docs/**`、`reports/**`
+マージの判定は CI（`.github/workflows/automerge.yml`）が行う。**AI は自分で `gh pr merge` しない**。PR を作ったら終わり。
 
-それ以外はオーナー承認を待つ。`destructive-migration` ラベルが付いた PR は、上記に該当しても自動マージしない。
+次をすべて満たす PR は、CI が auto-merge を有効化して自動でマージされる：
+
+- CI（`ci.yml` の全ジョブ）が通っている
+- `destructive-migration` / `needs-owner-review` ラベルが付いていない
+- 変更ファイルが下の「オーナー承認が必要なパス」に触れていない
+
+オーナー承認が必要なパス：
+
+- `.github/**`（ワークフローと CI のスクリプト。自動マージの判定そのものを含む）
+- `crawler/internal/policy/**`（クロールの間隔・停止条件・User-Agent）
+- `docs/03-guardrails.md`
+- `crawler/sites/*.yaml` の新規追加（対象サイトを増やす。既存ファイルの変更は自動マージ可）
+
+満たさない PR には CI が `needs-owner-review` ラベルを付け、理由をコメントする。ラベルを外すのはオーナー。
+オーナー承認のパスに触れる変更は、無関係な変更と同じ PR に混ぜない（混ぜると全体が承認待ちになる）。
 `reports/` は `report.yml` が毎日生成して自動マージする。手で編集しない。
 
 ## 存在する GitHub Secrets（値は読めない。名前だけ知っておく）
@@ -41,6 +54,7 @@
 - `SUPABASE_SECRET_KEY` — `sb_secret_...`（RLSを無視できる。クローラーの書き込みと日次レポートの読み取り（`crawl_logs` は非公開）に使う。フロントに出さない）
 - `FIREBASE_SERVICE_ACCOUNT` — デプロイ用サービスアカウントJSON
 - `SUPABASE_DB_PASSWORD` — 本番 DB の postgres パスワード。`deploy.yml` の `db push` と `ci.yml` の dry-run がセッションプーラー経由の `--db-url` で使う。コードやログに出さない
+- `AUTOMERGE_APP_CLIENT_ID` / `AUTOMERGE_APP_PRIVATE_KEY` — 自動マージ用 GitHub App。`automerge.yml` が auto-merge の有効化・解除だけに使う（ADR-0006）
 
 Supabase のアクセストークンは使わない（CI は Management API を呼ばない。`supabase/README.md`）。
 
