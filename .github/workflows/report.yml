@@ -6,6 +6,8 @@
 # 「初回貢献者」扱いで承認待ち（action_required）になることがある（2026-09-24 に発生）。承認待ちなら API で
 # 承認する。pull_request 実行が作られない場合は ci.yml を workflow_dispatch で明示的に起動する。
 # その後は gh pr merge --auto に任せる。
+# 自動マージの判定（automerge.yml、ADR-0006）と同じ commit status「auto-merge-gate」も自分で付ける。
+# reports/** だけの PR は常に条件を満たし、bot が起動した CI の完了で automerge.yml が動く保証がないため。
 name: Report
 
 on:
@@ -26,6 +28,7 @@ permissions:
   contents: write
   pull-requests: write
   actions: write
+  statuses: write
 
 concurrency:
   group: report
@@ -108,5 +111,8 @@ jobs:
               fi
             done
           fi
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/statuses/${sha}" \
+            -f state=success -f context=auto-merge-gate \
+            -f description="report.yml が生成した reports/** だけの PR" >/dev/null
           gh pr merge "$pr" --auto --squash --delete-branch
           echo "PR #$pr を作成し、CI 通過後の自動マージを予約した"
