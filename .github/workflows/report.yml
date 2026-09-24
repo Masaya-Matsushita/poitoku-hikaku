@@ -2,8 +2,10 @@
 # 通常は crawl.yml のクロール完了後に呼ばれる（workflow_call）。手動で作り直す時は workflow_dispatch。
 #
 # reports/** は自動マージしてよい範囲（AGENTS.md）。main への直 push はせず PR 経由にする。
-# GITHUB_TOKEN が作った PR には CI（pull_request）が自動では走らないため、ci.yml を workflow_dispatch で
-# 明示的に起動して必須チェック（go / web）を満たし、gh pr merge --auto に任せる。
+# 必須チェック（go / web）の満たし方：bot（GITHUB_TOKEN）が作った PR の pull_request 実行は
+# 「初回貢献者」扱いで承認待ち（action_required）になることがある（2026-09-24 に発生）。承認待ちなら API で
+# 承認する。pull_request 実行が作られない場合は ci.yml を workflow_dispatch で明示的に起動する。
+# その後は gh pr merge --auto に任せる。
 name: Report
 
 on:
@@ -84,7 +86,27 @@ jobs:
             pr="$(gh pr list --head "$branch" --state open --json number --jq '.[0].number')"
           fi
 
-          # GITHUB_TOKEN が作った PR には CI が自動で走らないので明示的に起動する（必須チェック go / web）
-          gh workflow run ci.yml --ref "$branch"
+          # 必須チェック（go / web）を満たす。PR 作成直後に pull_request 実行が作られるので少し待つ
+          sleep 15
+          sha="$(git rev-parse HEAD)"
+          runs="$(gh run list --workflow ci.yml --event pull_request --commit "$sha" --json databaseId,conclusion --jq '.[] | "\(.databaseId) \(.conclusion)"')"
+          if [ -z "$runs" ]; then
+            echo "pull_request の CI 実行が無いので明示的に起動する"
+            gh workflow run ci.yml --ref "$branch"
+          else
+            # 承認待ち（action_required）の実行は承認する。GITHUB_TOKEN で承認できない場合は明示起動に切り替える
+            echo "$runs" | while read -r run_id conclusion; do
+              if [ "$conclusion" = "action_required" ]; then
+                if gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/approve" >/dev/null; then
+                  echo "承認待ちの CI 実行 $run_id を承認した"
+                else
+                  echo "CI 実行 $run_id を承認できなかった。明示的に起動する"
+                  gh workflow run ci.yml --ref "$branch"
+                fi
+              else
+                echo "pull_request の CI 実行 $run_id は承認不要（$conclusion）"
+              fi
+            done
+          fi
           gh pr merge "$pr" --auto --squash --delete-branch
           echo "PR #$pr を作成し、CI 通過後の自動マージを予約した"
