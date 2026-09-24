@@ -35,7 +35,7 @@ func (c *Client) CrawlLogs(ctx context.Context, from, to string) ([]report.Crawl
 		Errors         []report.LogError `json:"errors"`
 		CrawlerVersion *string           `json:"crawler_version"`
 	}
-	// PostgREST は同じキーの条件を and で重ねられないので、範囲は 2 つの列指定で表す
+	// 日付の範囲は and=(gte,lte) の 1 条件にまとめる
 	q := url.Values{
 		"select": {"id,site_id,crawled_on,started_at,finished_at,status,request_count,offer_count,parsed_count,error_count,abort_reason,errors,crawler_version"},
 		"and":    {fmt.Sprintf("(crawled_on.gte.%s,crawled_on.lte.%s)", from, to)},

@@ -5,7 +5,6 @@ package report
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 )
@@ -422,9 +421,4 @@ func duration(l *CrawlLog) string {
 	}
 	d := l.FinishedAt.Sub(l.StartedAt).Round(time.Second)
 	return fmt.Sprintf("%dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
-}
-
-// SortLogs は id 順に並べる（テストの安定化用）。
-func SortLogs(logs []CrawlLog) {
-	sort.Slice(logs, func(i, j int) bool { return logs[i].ID < logs[j].ID })
 }
