@@ -36,7 +36,7 @@ main にマージ
 - 適用済みなら `db push` は「up to date」で何もしない（冪等）
 - `--include-all`：リモート履歴に無いファイルをタイムスタンプの新旧に関わらず適用する。並行する PR の順序が入れ替わっても取り残さないため
 - CLI のバージョンは `ci.yml` と `deploy.yml` で `2.117.0` に固定している。上げる時は両方を変える
-- 使う Secret：`SUPABASE_DB_PASSWORD`（DB パスワード）のみ。`SUPABASE_ACCESS_TOKEN` は CI では使わない。名前は `AGENTS.md`
+- 使う Secret：`SUPABASE_DB_PASSWORD`（DB パスワード）のみ。Supabase のアクセストークンは不要（Secrets からも削除済み）。名前は `AGENTS.md`
 - 履歴は `supabase_migrations.schema_migrations` に残る。初回スキーマ（`20260922000000_initial_schema.sql`）は 2026-09-22 にオーナーがローカル CLI（`supabase link` → `supabase db push`）で適用し、履歴も記録済み
 
 ### 破壊的マイグレーション（`destructive-migration` ラベル）

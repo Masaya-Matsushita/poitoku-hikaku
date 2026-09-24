@@ -66,7 +66,8 @@ type Summary struct {
 type Store interface {
 	// StartCrawlLog は status=running の行を作り、その id を返す。
 	StartCrawlLog(ctx context.Context, siteID, crawledOn string, startedAt time.Time, version string) (int64, error)
-	// SaveOffers は offers を upsert し、offer_snapshots を crawledOn の日付で書く。
+	// SaveOffers は offers を upsert（last_seen_on = crawledOn）し、還元額が変わった案件だけ
+	// offer_snapshots の区間を閉じて新しい区間を作る（ADR-0005）。
 	SaveOffers(ctx context.Context, siteID, crawledOn string, offers []Offer) error
 	// FinishCrawlLog は StartCrawlLog で作った行を最終結果で更新する。
 	FinishCrawlLog(ctx context.Context, id int64, s Summary) error

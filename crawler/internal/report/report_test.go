@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -31,7 +32,13 @@ func (f *fakeSource) CrawlLogs(_ context.Context, from, to string) ([]CrawlLog, 
 			out = append(out, l)
 		}
 	}
-	SortLogs(out)
+	// Source の契約どおり日付・id 順で返す
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CrawledOn != out[j].CrawledOn {
+			return out[i].CrawledOn < out[j].CrawledOn
+		}
+		return out[i].ID < out[j].ID
+	})
 	return out, nil
 }
 
