@@ -14,6 +14,10 @@ const OWNER_PATHS = [
   { match: (p) => p.startsWith('.github/'), rule: '.github/**' },
   { match: (p) => p.startsWith('crawler/internal/policy/'), rule: 'crawler/internal/policy/**' },
   { match: (p) => p === 'docs/03-guardrails.md', rule: 'docs/03-guardrails.md' },
+  // AI が従う規則そのもの。AI の PR が規則を書き換えて自動マージされる経路を塞ぐ
+  { match: (p) => p === 'AGENTS.md', rule: 'AGENTS.md' },
+  // Routine のプロンプト。Routine が自分の手順を書き換えて自動マージされる経路を塞ぐ
+  { match: (p) => p.startsWith('.claude/routines/'), rule: '.claude/routines/**' },
 ];
 
 // 対象サイトの定義。既存ファイルの変更（セレクタの修復）は自動マージ可、新規追加（対象サイトが増える）はオーナー承認

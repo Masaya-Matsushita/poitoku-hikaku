@@ -38,7 +38,8 @@ Routine は Secrets の値を読めない（読まない）。期限は表に書
 ### Issue の書き方
 
 テンプレート `.github/ISSUE_TEMPLATE/task.md` を使い、**目的・完了条件・触ってよいパス**の 3 つを書く。
-3 つが埋まっていない Issue には `ready` を付けない。Issue はオーナーか対話セッションが書く（Routine は起票しない）。
+3 つが埋まっていない Issue には `ready` を付けない。AI（対話セッション・Routine）が書く Issue は必ず `proposal` を付けて起票し、`ready` を付けるのはオーナーだけ。
+Routine が起票するのは、実装中に範囲外の改善に気づいた時だけ（AGENTS.md「実装中に気づいた改善の扱い」。1 回の実行で 3 件まで）。
 
 ### ラベル
 
@@ -47,7 +48,7 @@ Routine は Secrets の値を読めない（読まない）。期限は表に書
 | `ready` | 着手してよい。目的・完了条件・触ってよいパスが書いてある | オーナー | Routine（着手時・`needs-clarification` にする時） |
 | `in-progress` | Routine が着手した。PR のマージで Issue ごと閉じる | Routine（着手時） | Routine（行き詰まった時）。PR が無いまま残っていたらオーナー |
 | `needs-clarification` | Routine が判断に迷い着手しなかった（または行き詰まった）。理由は Issue のコメント | Routine | オーナー（答えを書いて外し、`ready` を付け直す） |
-| `proposal` | AI（対話セッション）が起票した提案。オーナーが採用するまで着手しない | 対話セッション | オーナー（採用なら `ready` に替える、不採用なら閉じる） |
+| `proposal` | AI（対話セッション・Routine）が起票した提案。オーナーが採用するまで着手しない | 対話セッション・Routine | オーナー（採用なら `ready` に替える、不採用なら閉じる） |
 | `priority:high` / `priority:medium` / `priority:low` | 消化の順番。無印は `low` と同じ | オーナー | オーナー |
 
 状態の流れ：`proposal` →（オーナーが採用）→ `ready` →（Routine が着手）→ `in-progress` →（PR マージ）→ closed。
@@ -58,9 +59,10 @@ Routine は Secrets の値を読めない（読まない）。期限は表に書
 1 回の実行で扱う Issue は **1 件だけ**。PR を小さく保ち、失敗しても影響を 1 件に閉じるため。
 
 1. `ready` のうち `in-progress` / `needs-clarification` が付いていないものを、`priority:high` → `medium` → それ以外の順、同じ優先度なら Issue 番号の小さい順に 1 件選ぶ
-2. `ready` が無ければ何もせず終了する（自分で改善を探さない・起票しない）
+2. `ready` が無ければ何もせず終了する（自分で改善を探しに行かない）
 3. 判断に迷う Issue（完了条件が曖昧、触ってよいパスの外が要る、1 PR に収まらない、docs と矛盾する、実サイトへのアクセスが要る）は着手せず、コメントして `needs-clarification` を付けて終了する
-4. 着手時に `ready` を `in-progress` に替え、実装・検証し、`Closes #N` を本文に書いた PR を作って終了する
+4. 着手時に `ready` を `in-progress` に替え、実装・検証し、`Closes #N` を本文に書いた PR を作って終了する。
+   実装中に気づいた範囲外の改善は、ガードレール強化なら同じ PR に入れ、それ以外は `proposal` で起票する
 
 「何もしない」を正解として明示するのが重要。改善を強制すると無意味な変更が積み上がる。
 
