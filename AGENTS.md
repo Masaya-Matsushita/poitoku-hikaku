@@ -42,11 +42,26 @@
 - `.github/**`（ワークフローと CI のスクリプト。自動マージの判定そのものを含む）
 - `crawler/internal/policy/**`（クロールの間隔・停止条件・User-Agent）
 - `docs/03-guardrails.md`
+- `AGENTS.md`（このファイル。AI が従う規則そのもの）
+- `.claude/routines/**`（Routine のプロンプト。Routine が自分の手順を書き換えられないようにする）
 - `crawler/sites/*.yaml` の新規追加（対象サイトを増やす。既存ファイルの変更は自動マージ可）
 
 満たさない PR には CI が `needs-owner-review` ラベルを付け、理由をコメントする。ラベルを外すのはオーナー。
 オーナー承認のパスに触れる変更は、無関係な変更と同じ PR に混ぜない（混ぜると全体が承認待ちになる）。
+例外はガードレールを強くする変更で、次節のとおり同じ PR に入れる。
 `reports/` は `report.yml` が毎日生成して自動マージする。手で編集しない。
+
+## 実装中に気づいた改善の扱い
+
+作業中に依頼・Issue の範囲の外の改善に気づいたら、次のどれかにする。気づいたまま黙って見送らない。
+
+- **ガードレールを強くする変更**（権限を狭める・オーナー承認パスを増やす・検査を足す）：スコープ外でも同じ PR に入れる。
+  PR 本文に「スコープ外だがガードレール強化のため入れた」と書く。そのせいで PR が `needs-owner-review` になってもよい
+- **スコープ内の改善**（依頼の目的に直接効く修正・テスト・ドキュメント）：同じ PR に入れる
+- **スコープ外の機能追加・改善**：実装せず、`proposal` ラベルで Issue を起票する（テンプレートの目的・完了条件・触ってよいパスを書く）。
+  `ready` は付けない。PR 本文と報告に Issue 番号を書く
+
+報告を「提案：〜。今回は入れていません」で終わらせない。入れたか、`proposal` の Issue にしたかのどちらかにする。
 
 ## Issue とラベル
 
@@ -54,7 +69,7 @@
 ラベル（`ready` / `in-progress` / `needs-clarification` / `proposal` / `priority:*`）の意味は `docs/05-routines.md`。
 
 - 夜間 Routine は `.claude/routines/nightly-improve.md` に従い、`ready` を 1 晩 1 件だけ実装する
-- 対話セッションが改善を思いついたら、実装せず `proposal` を付けて起票してよい。`ready` を付けるのはオーナー
+- AI（対話セッション・Routine）が起票する Issue には `proposal` を付ける。`ready` を付けるのはオーナーだけ
 - Issue を閉じる PR には本文に `Closes #N` を書く
 
 ## 存在する GitHub Secrets（値は読めない。名前だけ知っておく）

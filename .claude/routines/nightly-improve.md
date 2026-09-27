@@ -19,7 +19,7 @@ gh issue list --state open --label ready --limit 100 --json number,title,labels 
 ```
 
 - 並び：`priority:high` → `priority:medium` → それ以外（`priority:low`・無印）、同じ優先度なら Issue 番号の小さい順
-- 結果が `null`（`ready` が無い）なら **何もせず「ready の Issue なし」とだけ報告して終了**。自分で Issue を起票しない・改善を探さない
+- 結果が `null`（`ready` が無い）なら **何もせず「ready の Issue なし」とだけ報告して終了**。改善を探しに行かない
 
 ## 2. 着手できるか判断する
 
@@ -49,7 +49,17 @@ git switch -c routine/issue-<N>-<英数字の短い名前> origin/main
 
 ## 4. 実装し、検証する
 
-- 変更は「触ってよいパス」の中だけ。1 コミット＝1 論理変更、ドキュメントの変更も同じ PR に含める（AGENTS.md）
+- 変更は「触ってよいパス」の中だけ（例外は次の項目のガードレール強化だけ）。1 コミット＝1 論理変更、ドキュメントの変更も同じ PR に含める（AGENTS.md）
+- 実装中に気づいた範囲外の改善は AGENTS.md「実装中に気づいた改善の扱い」に従う：
+  - ガードレールを強くする変更（権限を狭める・承認パスを増やす・検査を足す）は、「触ってよいパス」の外でも同じ PR に入れてよい唯一の例外。
+    PR 本文に「スコープ外だがガードレール強化のため入れた」と書く（`needs-owner-review` になってもよい）
+  - それ以外の範囲外の改善は実装せず Issue にする。起票する時は必ず `proposal` を付け、`ready` は付けない：
+
+  ```sh
+  gh issue create --label proposal --title "<要約>" --body "<目的・完了条件・触ってよいパス。どの Issue の作業中に気づいたか>"
+  ```
+
+  起票は 1 回の実行で 3 件まで。起票した Issue の番号は PR 本文の「気づいたこと」に書く
 - AGENTS.md「PR を出す前にローカルで CI と同じ検証を通す」のコマンドを、変更したディレクトリ（`crawler/`・`web/`）について全部通す
 - 検証が通らないまま時間切れ・行き詰まりになったら PR は作らない。push 済みのブランチはそのままにして、
   `gh issue comment <N>`（何を試し、どこで詰まったか）→ `gh issue edit <N> --add-label needs-clarification --remove-label in-progress` で終了する
@@ -68,7 +78,8 @@ Closes #<N>
 
 ## 何をしたか
 ## 完了条件をどう確かめたか（Issue の完了条件ごとに）
-## 触ったパス（Issue の「触ってよいパス」の範囲内であること）
+## 触ったパス（「触ってよいパス」の外があれば、ガードレール強化として入れた理由）
+## 気づいたこと（起票した proposal の Issue 番号。無ければ「なし」）
 ```
 
 PR を作ったら終わり。**マージは CI（`automerge.yml`）が判定する（ADR-0006）。自分で `gh pr merge` しない。**
@@ -81,6 +92,7 @@ PR を作ったら終わり。**マージは CI（`automerge.yml`）が判定す
 ## 禁止
 
 - 1 晩に 2 件以上の Issue を扱う
-- `gh pr merge`、main への直接 push、Issue の起票
+- `gh pr merge`、main への直接 push
+- `ready` ラベル付きでの Issue の起票、既存 Issue への `ready` の付与（`proposal` ラベルでの起票は可）
 - `.env*`・`secrets/` の読み書き、リクエスト間隔・頻度の変更、破壊的マイグレーション、有料サービスの有効化（AGENTS.md）
 - 実サイトへのアクセス（`go run ./cmd/crawler` を `-dry-run` 含め実行しない）
