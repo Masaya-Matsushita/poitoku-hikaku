@@ -443,3 +443,26 @@ func fmtReward(r Reward) string {
 		return "nothing"
 	}
 }
+
+func TestItemsRewardUnitOnlyForBareNumbers(t *testing.T) {
+	doc, err := Parse([]byte(`<ul>
+<li class="i"><a href="/a" class="n">A</a><p class="r">12,000</p></li>
+<li class="i"><a href="/b" class="n">B</a><p class="r">3.5%</p></li>
+<li class="i"><a href="/c" class="n">C</a><p class="r">最大500</p></li>
+<li class="i"><a href="/d" class="n">D</a></li>
+</ul>`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := site.Listing{ItemSelector: ".i", NameSelector: ".n", RewardSelector: ".r", LinkSelector: "a", RewardUnit: "pt"}
+	items, _, err := Items(doc, l)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"12,000pt", "3.5%", "最大500", ""}
+	for i, it := range items {
+		if it.RewardRaw != want[i] {
+			t.Errorf("items[%d].RewardRaw = %q, want %q", i, it.RewardRaw, want[i])
+		}
+	}
+}

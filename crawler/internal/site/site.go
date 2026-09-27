@@ -54,18 +54,25 @@ type Listing struct {
 	URLTemplates  []string          `yaml:"url_templates"`
 	ParamDefaults map[string]string `yaml:"param_defaults"`
 	// MaxPages は 1 カテゴリ・1 テンプレートあたりのページ数の上限（暴走防止）。
-	MaxPages       int    `yaml:"max_pages"`
-	ItemSelector   string `yaml:"item_selector"`
-	NameSelector   string `yaml:"name_selector"`
+	MaxPages     int    `yaml:"max_pages"`
+	ItemSelector string `yaml:"item_selector"`
+	NameSelector string `yaml:"name_selector"`
+	// NameAttr は案件名を持つ属性（画像の alt 等）。空なら name_selector の要素のテキスト。
+	// 一覧のテキストが途中で省略（「…」）され、全文が属性にだけあるサイト用。任意。
+	NameAttr       string `yaml:"name_attr"`
 	RewardSelector string `yaml:"reward_selector"`
 	// RewardFallbackSelector は reward_selector で文字列が取れない時に見る要素（「ポイント対象外」等）。任意。
 	RewardFallbackSelector string `yaml:"reward_fallback_selector"`
 	// RewardWhenEmpty は還元額の要素が無い案件に入れる文言（サイトが還元 0 の案件で要素を出さない場合）。
 	// 空なら還元額は空のまま（抽出失敗として数える）。任意。
-	RewardWhenEmpty    string `yaml:"reward_when_empty"`
+	RewardWhenEmpty string `yaml:"reward_when_empty"`
+	// RewardUnit は数値だけの還元額（"12,000"）に付ける単位（"pt" 等）。単位を CSS で描くサイト用。
+	// 付けないと単位の無い数値は数値化できない（抽出失敗）。"3%" のように単位があるものには付けない。任意。
+	RewardUnit         string `yaml:"reward_unit"`
 	LinkSelector       string `yaml:"link_selector"`
 	PaginationSelector string `yaml:"pagination_selector"`
-	PaginationAttr     string `yaml:"pagination_attr"`
+	// PaginationAttr はページ番号を持つ属性。空なら要素のテキスト。
+	PaginationAttr string `yaml:"pagination_attr"`
 	// TotalSelector はカテゴリの総件数を持つ要素（任意）。取得件数と比べて表示上限による取りこぼしを記録する。
 	TotalSelector string `yaml:"total_selector"`
 	// TotalAttr は総件数を持つ属性。空なら要素のテキスト。
@@ -176,8 +183,8 @@ func (d *Definition) Validate() error {
 	errs = append(errs, checkSelector("listing.reward_fallback_selector", l.RewardFallbackSelector, false)...)
 	errs = append(errs, checkSelector("listing.link_selector", l.LinkSelector, true)...)
 	errs = append(errs, checkSelector("listing.pagination_selector", l.PaginationSelector, false)...)
-	if l.PaginationSelector != "" && l.PaginationAttr == "" {
-		errs = append(errs, errors.New("listing.pagination_attr が空"))
+	if l.PaginationAttr != "" && l.PaginationSelector == "" {
+		errs = append(errs, errors.New("listing.pagination_attr には listing.pagination_selector が必要"))
 	}
 
 	if d.URL.PathPattern != "" {

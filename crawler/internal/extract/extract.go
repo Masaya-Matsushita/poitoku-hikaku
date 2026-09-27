@@ -59,7 +59,11 @@ func Items(doc *html.Node, l site.Listing) (items []Item, skipped int, err error
 	}
 
 	for _, n := range cascadia.QueryAll(doc, itemSel) {
-		name := Text(cascadia.Query(n, nameSel))
+		nameNode := cascadia.Query(n, nameSel)
+		name := Text(nameNode)
+		if l.NameAttr != "" {
+			name = Attr(nameNode, l.NameAttr)
+		}
 		href := Attr(linkOrSelf(n, linkSel), "href")
 		if name == "" || href == "" {
 			skipped++
@@ -74,6 +78,10 @@ func Items(doc *html.Node, l site.Listing) (items []Item, skipped int, err error
 			// サイトが還元 0 の案件で要素自体を出さない場合の既定文言（未設定なら空のまま）
 			reward = l.RewardWhenEmpty
 		}
+		if l.RewardUnit != "" && bareNumber.MatchString(reward) {
+			// 単位を CSS で描くサイトは数値だけが HTML にある。画面の表示どおり単位を付けて記録する
+			reward += l.RewardUnit
+		}
 		items = append(items, Item{
 			Name:      name,
 			RewardRaw: reward,
@@ -82,6 +90,9 @@ func Items(doc *html.Node, l site.Listing) (items []Item, skipped int, err error
 	}
 	return items, skipped, nil
 }
+
+// bareNumber は単位の無い還元額（"12,000"）。reward_unit を付ける対象。
+var bareNumber = regexp.MustCompile(`^[0-9][0-9,]*(\.[0-9]+)?$`)
 
 // linkOrSelf は案件要素の中のリンクを返す。案件要素自身がリンクならそれを返す。
 func linkOrSelf(n *html.Node, sel cascadia.Sel) *html.Node {
