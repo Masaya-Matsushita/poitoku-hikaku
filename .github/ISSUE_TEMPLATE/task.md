@@ -19,7 +19,8 @@ assignees: ''
 ## 触ってよいパス
 
 <!-- この Issue で変更してよいパス。ここに無いパスの変更が要るなら Routine は着手しない。
-     オーナー承認のパス（.github/**、crawler/internal/policy/**、docs/03-guardrails.md、crawler/sites/*.yaml の新規追加）を
+     オーナー承認のパス（.github/**、crawler/internal/policy/**、docs/03-guardrails.md、AGENTS.md、.claude/routines/**、
+     crawler/sites/*.yaml の新規追加）を
      含めてもよいが、その PR は needs-owner-review になる（AGENTS.md） -->
 
 -
