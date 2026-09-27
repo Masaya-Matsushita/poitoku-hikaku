@@ -24,6 +24,19 @@ func newReadServer(t *testing.T) (*httptest.Server, *[]string) {
 		case "/rest/v1/crawl_logs":
 			w.Write([]byte(`[{"id":3,"site_id":"moppy","crawled_on":"2026-09-23","started_at":"2026-09-22T18:00:10+00:00","finished_at":"2026-09-22T18:08:02+00:00","status":"success","request_count":158,"offer_count":1791,"parsed_count":1785,"error_count":0,"abort_reason":null,"errors":[],"crawler_version":"5cad0a6"},` +
 				`{"id":4,"site_id":"hapitas","crawled_on":"2026-09-23","started_at":"2026-09-22T18:00:12+00:00","finished_at":null,"status":"running","request_count":0,"offer_count":0,"parsed_count":0,"error_count":0,"abort_reason":null,"errors":[],"crawler_version":null}]`))
+		case "/rest/v1/offers":
+			q := r.URL.Query()
+			switch {
+			case q.Get("site_id") == "eq.moppy" && q.Get("first_seen_on") == "eq.2026-09-23":
+				w.Header().Set("Content-Range", "0-0/3")
+				w.Write([]byte(`[{"id":1}]`))
+			case q.Get("site_id") == "eq.moppy" && q.Get("last_seen_on") == "eq.2026-09-22":
+				w.Header().Set("Content-Range", "0-0/94")
+				w.Write([]byte(`[{"id":1}]`))
+			default:
+				w.Header().Set("Content-Range", "*/0")
+				w.Write([]byte(`[]`))
+			}
 		case "/rest/v1/offer_snapshots":
 			q := r.URL.Query()
 			switch {
@@ -108,6 +121,31 @@ func TestEmptyRewardCountUsesContentRange(t *testing.T) {
 	for _, want := range []string{"valid_from=eq.2026-09-23", "offers.site_id=eq.moppy", "prefer=count=exact"} {
 		if !strings.Contains(q, want) {
 			t.Errorf("ChangedCount のクエリに %q が無い: %s", want, q)
+		}
+	}
+}
+
+func TestNewAndGoneOfferCount(t *testing.T) {
+	srv, seen := newReadServer(t)
+	c, _ := New(srv.URL, "sb_secret_test")
+	ctx := context.Background()
+
+	n, err := c.NewOfferCount(ctx, "moppy", "2026-09-23")
+	if err != nil || n != 3 {
+		t.Errorf("NewOfferCount = %d, %v, want 3", n, err)
+	}
+	n, err = c.GoneOfferCount(ctx, "moppy", "2026-09-22")
+	if err != nil || n != 94 {
+		t.Errorf("GoneOfferCount = %d, %v, want 94", n, err)
+	}
+	for i, want := range [][]string{
+		{"/rest/v1/offers?", "first_seen_on=eq.2026-09-23", "site_id=eq.moppy", "prefer=count=exact", "range=0-0"},
+		{"/rest/v1/offers?", "last_seen_on=eq.2026-09-22", "site_id=eq.moppy", "prefer=count=exact", "range=0-0"},
+	} {
+		for _, w := range want {
+			if !strings.Contains((*seen)[i], w) {
+				t.Errorf("クエリ %d に %q が無い: %s", i, w, (*seen)[i])
+			}
 		}
 	}
 }
