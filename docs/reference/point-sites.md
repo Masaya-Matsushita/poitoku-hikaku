@@ -157,6 +157,7 @@ Sitemap: https://hapitas.jp/published-assets/auto-generated/sitemap/sitemap.xml
 | カテゴリ発見 | トップページ `/` のサイドメニュー `a.SideColCateMenu__link--category` から 20 件：「お買い物」`/shopping/shop/101〜111`（11 件）＋「サービス」`/earn/apply/101,103,104,106〜111`（9 件）。フッターにだけ出る `/earn/apply/102`・`105`、`/shopping/shop/112` は 0 件の旧カテゴリなので対象外 |
 | 一覧取得 | `/shopping/shop/<N>?page=<P>` または `/earn/apply/<N>?page=<P>`。30 件/ページ、並び順は既定（おすすめ順）。最終ページ番号は `.com-pagination__list a` のテキストの最大値 |
 | JS実行 | 不要。Cookie・特殊ヘッダも不要 |
+| 国外 IP からの取得 | 可（2026-09-27、国外のクラウドセッションから robots.txt・トップ・一覧・規約とも 200。ポイントインカム・げん玉のような遮断は無い。GitHub Actions のランナーからは未検証だが、同じ国外から届いているのでモッピー・ハピタスと同条件の見込み） |
 | 案件要素 | `li.ad-category__ad`、案件名 `.ad-category__ad__name--text`、還元額 `.ad-category__ad__pt`（"2,000pt" / "1.5%" / "1.5％"）、詳細 URL は最初の `a[href*="/ad_details/"]`（2 本目は口コミ `#shopping_rate`） |
 | 還元アップ中 | `<s>3,000pt</s>→3,500pt` と旧額を取り消し線で併記。`reward_exclude_selector: s` で旧額を除き「→3,500pt」を記録（数値化は 3,500） |
 | 還元 0 の案件 | Amazon・ANAのふるさと納税などは `.ad-category__ad__pt` が空（→「ポイント対象外」）、ヨリヤス等は "0"（→ 0 ポイント） |
