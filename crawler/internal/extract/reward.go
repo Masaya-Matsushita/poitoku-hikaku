@@ -24,14 +24,17 @@ var noRewardMarkers = []string{"対象外"}
 
 // ParseReward は "14,000P" / "1.0%" / "最大10,000P" のような表示文字列を解釈する。
 // 全角の数字・記号は半角に寄せてから見る。率と額の両方があれば率を優先しない（どちらか一方だけ返す）。
-// 「ポイント対象外」のような還元なしの文言は Points = 0。
+// 「ポイント対象外」のような還元なしの文言と、単位の無い "0" だけの表示（0 は単位によらず 0）は Points = 0。
 func ParseReward(raw string) Reward {
 	s := normalize(raw)
+	zero := int64(0)
 	for _, marker := range noRewardMarkers {
 		if strings.Contains(s, marker) {
-			zero := int64(0)
 			return Reward{Points: &zero}
 		}
+	}
+	if strings.TrimSpace(s) == "0" {
+		return Reward{Points: &zero}
 	}
 	if m := percentPattern.FindStringSubmatch(s); m != nil {
 		if v, err := strconv.ParseFloat(m[1], 64); err == nil {

@@ -117,9 +117,9 @@ listing:
   item_selector: ""
   name_selector: ".n"
   reward_selector: ".r"
+  reward_exclude_selector: "s[["
   link_selector: "a"
   pagination_selector: ".p a"
-  pagination_attr: ""
 url:
   path_pattern: "no-group"
   external_id_regex: "id=(\\d+)-(\\d+)"
@@ -134,7 +134,7 @@ url:
 	for _, want := range []string{
 		"id は", "name が空", "base_url が不正", "User-Agent", "discovery.url が空",
 		"discovery.link_selector が不正", "名前付きグループ", "併用できない", "max_pages",
-		"item_selector が空", "pagination_attr が空", "path_pattern は", "キャプチャグループを 1 つ持つ",
+		"item_selector が空", "reward_exclude_selector が不正", "path_pattern は", "キャプチャグループを 1 つ持つ",
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("エラーに %q が含まれない: %v", want, err)

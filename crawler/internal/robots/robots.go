@@ -1,6 +1,7 @@
 // Package robots は robots.txt を解釈し、パスの取得可否を判定する（docs/03-guardrails.md「robots.txt 遵守」）。
 //
-// 対応する範囲は Google の仕様の主要部分：User-agent によるグループ、Allow / Disallow、
+// 対応する範囲は Google の仕様（RFC 9309）の主要部分：User-agent によるグループ（同じ UA に
+// 当たるグループが複数あれば規則を結合する）、Allow / Disallow、
 // ワイルドカード *、末尾一致 $、最長一致優先（同長なら Allow）。Crawl-delay は policy の
 // 固定間隔（3 秒）より短くしない前提で無視する。
 package robots
@@ -90,16 +91,13 @@ func (r *Rules) Allowed(userAgent, path string) bool {
 	if r == nil {
 		return true
 	}
-	g := r.groupFor(userAgent)
-	if g == nil {
-		return true
-	}
+	rules := r.rulesFor(userAgent)
 	if path == "" {
 		path = "/"
 	}
 	var best *rule
-	for i := range g.rules {
-		rl := &g.rules[i]
+	for i := range rules {
+		rl := &rules[i]
 		if !rl.re.MatchString(path) {
 			continue
 		}
@@ -113,26 +111,37 @@ func (r *Rules) Allowed(userAgent, path string) bool {
 	return best.allow
 }
 
-// groupFor は UA の製品トークン（"/" より前）に一致するグループ、無ければ * のグループを返す。
-func (r *Rules) groupFor(userAgent string) *group {
+// rulesFor は UA の製品トークン（"/" より前）に一致するグループ、無ければ * のグループの規則を返す。
+// 同じ UA に当たるグループが複数あれば（User-agent: * が 2 回書かれている等）規則を結合する
+// （RFC 9309 2.2.1）。最初のグループだけを見ると後ろのグループの Disallow を取りこぼす
+// （ちょびリッチの robots.txt は 1 つ目の * グループが Allow: /ads.txt だけで、Disallow は 2 つ目にある）。
+func (r *Rules) rulesFor(userAgent string) []rule {
 	token := strings.ToLower(strings.TrimSpace(userAgent))
 	if i := strings.IndexAny(token, "/ "); i >= 0 {
 		token = token[:i]
 	}
-	var wildcard *group
-	for i := range r.groups {
-		g := &r.groups[i]
+	var specific, wildcard []rule
+	matched := false
+	for _, g := range r.groups {
+		isSpecific, isWildcard := false, false
 		for _, a := range g.agents {
-			if a == "*" {
-				if wildcard == nil {
-					wildcard = g
-				}
-				continue
-			}
-			if token != "" && (a == token || strings.HasPrefix(a, token)) {
-				return g
+			switch {
+			case a == "*":
+				isWildcard = true
+			case token != "" && (a == token || strings.HasPrefix(a, token)):
+				isSpecific = true
 			}
 		}
+		if isSpecific {
+			matched = true
+			specific = append(specific, g.rules...)
+		}
+		if isWildcard {
+			wildcard = append(wildcard, g.rules...)
+		}
+	}
+	if matched {
+		return specific
 	}
 	return wildcard
 }
