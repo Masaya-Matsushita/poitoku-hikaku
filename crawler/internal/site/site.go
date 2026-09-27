@@ -21,7 +21,7 @@ import (
 
 // Definition は 1 サイト分の定義。
 type Definition struct {
-	// ID は sites テーブルの id と一致させる（moppy, hapitas ...）。
+	// ID は sites テーブルの id と一致させる（moppy, hapitas, chobirich ...）。
 	ID   string `yaml:"id"`
 	Name string `yaml:"name"`
 	// BaseURL は相対 URL の解決とロボット排除（robots.txt）の取得に使う。
@@ -60,12 +60,16 @@ type Listing struct {
 	RewardSelector string `yaml:"reward_selector"`
 	// RewardFallbackSelector は reward_selector で文字列が取れない時に見る要素（「ポイント対象外」等）。任意。
 	RewardFallbackSelector string `yaml:"reward_fallback_selector"`
+	// RewardExcludeSelector は還元額の要素の中で、文字列から除く子孫要素（任意）。
+	// 「<s>1,000pt</s>→1,500pt」のように旧還元額を取り消し線で併記するサイトで、旧値を拾わないために使う。
+	RewardExcludeSelector string `yaml:"reward_exclude_selector"`
 	// RewardWhenEmpty は還元額の要素が無い案件に入れる文言（サイトが還元 0 の案件で要素を出さない場合）。
 	// 空なら還元額は空のまま（抽出失敗として数える）。任意。
 	RewardWhenEmpty    string `yaml:"reward_when_empty"`
 	LinkSelector       string `yaml:"link_selector"`
 	PaginationSelector string `yaml:"pagination_selector"`
-	PaginationAttr     string `yaml:"pagination_attr"`
+	// PaginationAttr はページ番号を持つ属性。空なら要素のテキスト（"1" "2" …。数字でないものは無視）。
+	PaginationAttr string `yaml:"pagination_attr"`
 	// TotalSelector はカテゴリの総件数を持つ要素（任意）。取得件数と比べて表示上限による取りこぼしを記録する。
 	TotalSelector string `yaml:"total_selector"`
 	// TotalAttr は総件数を持つ属性。空なら要素のテキスト。
@@ -174,11 +178,9 @@ func (d *Definition) Validate() error {
 	errs = append(errs, checkSelector("listing.name_selector", l.NameSelector, true)...)
 	errs = append(errs, checkSelector("listing.reward_selector", l.RewardSelector, true)...)
 	errs = append(errs, checkSelector("listing.reward_fallback_selector", l.RewardFallbackSelector, false)...)
+	errs = append(errs, checkSelector("listing.reward_exclude_selector", l.RewardExcludeSelector, false)...)
 	errs = append(errs, checkSelector("listing.link_selector", l.LinkSelector, true)...)
 	errs = append(errs, checkSelector("listing.pagination_selector", l.PaginationSelector, false)...)
-	if l.PaginationSelector != "" && l.PaginationAttr == "" {
-		errs = append(errs, errors.New("listing.pagination_attr が空"))
-	}
 
 	if d.URL.PathPattern != "" {
 		if re, err := regexp.Compile(d.URL.PathPattern); err != nil {

@@ -57,6 +57,12 @@ func Items(doc *html.Node, l site.Listing) (items []Item, skipped int, err error
 			return nil, 0, fmt.Errorf("extract: reward_fallback_selector: %w", err)
 		}
 	}
+	var excludeSel cascadia.Sel
+	if l.RewardExcludeSelector != "" {
+		if excludeSel, err = cascadia.Parse(l.RewardExcludeSelector); err != nil {
+			return nil, 0, fmt.Errorf("extract: reward_exclude_selector: %w", err)
+		}
+	}
 
 	for _, n := range cascadia.QueryAll(doc, itemSel) {
 		name := Text(cascadia.Query(n, nameSel))
@@ -65,7 +71,7 @@ func Items(doc *html.Node, l site.Listing) (items []Item, skipped int, err error
 			skipped++
 			continue
 		}
-		reward := Text(cascadia.Query(n, rewardSel))
+		reward := textExcluding(cascadia.Query(n, rewardSel), excludeSel)
 		if reward == "" && fallbackSel != nil {
 			// 還元額の要素が無い案件（ポイント対象外など）は代替要素の文言を還元額として記録する
 			reward = Text(cascadia.Query(n, fallbackSel))
@@ -266,19 +272,28 @@ func ExternalID(canonical string, re *regexp.Regexp) string {
 
 // Text は要素配下のテキストを連結し、空白を 1 つに潰して返す。nil なら空。
 func Text(n *html.Node) string {
+	return textExcluding(n, nil)
+}
+
+// textExcluding は Text と同じだが、exclude に一致する子孫要素（取り消し線の旧還元額など）の
+// テキストを含めない。exclude が nil なら Text と同じ。
+func textExcluding(n *html.Node, exclude cascadia.Sel) string {
 	if n == nil {
 		return ""
 	}
 	var sb strings.Builder
 	var walk func(*html.Node)
-	walk = func(n *html.Node) {
-		if n.Type == html.TextNode {
-			sb.WriteString(n.Data)
+	walk = func(c *html.Node) {
+		if c.Type == html.TextNode {
+			sb.WriteString(c.Data)
 			sb.WriteByte(' ')
 			return
 		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
+		if exclude != nil && c != n && c.Type == html.ElementNode && exclude.Match(c) {
+			return
+		}
+		for cc := c.FirstChild; cc != nil; cc = cc.NextSibling {
+			walk(cc)
 		}
 	}
 	walk(n)
