@@ -177,6 +177,61 @@ func TestRunUnpagedMultiTemplateAndTruncation(t *testing.T) {
 	}
 }
 
+// ちょびリッチ型：パスの 3 要素（section/kind/cat）をテンプレートに入れ、?page=N でページ送りする。
+// robots.txt は User-agent: * が 2 グループに分かれている（結合して検証する）。
+func TestRunChobirichPathParamsAndPaging(t *testing.T) {
+	d, err := site.LoadByID(filepath.Join("..", "..", "sites"), "chobirich")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfixture := func(name string) []byte {
+		b, err := os.ReadFile(filepath.Join("..", "..", "testdata", "chobirich", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	// 本番の discovery.url はトップページ（20 カテゴリ）なので、2 カテゴリだけのメニューに差し替える
+	menu := `<ul>
+<li><a class="SideColCateMenu__link SideColCateMenu__link--category" href="https://www.chobirich.com/shopping/shop/101">総合通販<br>・オークション</a></li>
+<li><a class="SideColCateMenu__link SideColCateMenu__link--category" href="/earn/apply/101/">会員登録・資料請求</a></li>
+<li><a class="SideColCateMenu__link SideColCateMenu__link--category" href="https://www.chobirich.com/shopping#clickstamp_box">スタンプ</a></li>
+</ul>`
+	d.Discovery.URL = "/test-menu"
+	base := "https://www.chobirich.com"
+	f := &fakeFetcher{responses: map[string]fakeResponse{
+		base + "/robots.txt":               {body: cfixture("robots.txt")},
+		base + "/test-menu":                {body: []byte(menu)},
+		base + "/shopping/shop/101?page=1": {body: cfixture("list_shop_101_p1.html")}, // 2 ページと申告
+		base + "/shopping/shop/101?page=2": {body: cfixture("list_empty.html")},       // 0 件で打ち切り
+		base + "/earn/apply/101?page=1":    {body: cfixture("list_earn_101_p1.html")}, // 6 ページと申告
+		base + "/earn/apply/101?page=2":    {body: cfixture("list_empty.html")},
+	}}
+	st := &fakeStore{}
+	res, err := Run(context.Background(), d, f, st, Options{Now: fixedNow()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := res.Summary
+	if s.Status != "success" {
+		t.Errorf("Status = %s, Errors = %v", s.Status, s.Errors)
+	}
+	if s.CategoryCount != 2 {
+		t.Errorf("CategoryCount = %d（スタンプへのリンクは param_pattern に合わないので除外）", s.CategoryCount)
+	}
+	if s.RequestCount != 6 {
+		t.Errorf("RequestCount = %d, want 6, calls = %v", s.RequestCount, f.calls)
+	}
+	if s.OfferCount != 60 || s.ParsedCount != 60 {
+		t.Errorf("OfferCount = %d, ParsedCount = %d, want 60 / 60", s.OfferCount, s.ParsedCount)
+	}
+	for _, o := range st.saved {
+		if !strings.HasPrefix(o.URL, base+"/ad_details/") || !strings.HasSuffix(o.URL, "/") || o.ExternalID == "" {
+			t.Errorf("URL 正規化か external_id に問題: %+v", o)
+		}
+	}
+}
+
 // ポイントタウン型：パスに group と slug を持つカテゴリ、/category/<group>/<slug>/<N> のページ送り
 // （最終ページ番号はリンクのテキスト）。robots.txt は AdsBot-Google 向けにだけ /category/ と /item/ を
 // 禁止しているので、* のグループに従うこのクローラーは止まらないこと。

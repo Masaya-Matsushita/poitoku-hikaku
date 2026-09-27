@@ -1,0 +1,45 @@
+# ちょびリッチ（www.chobirich.com）のクロール定義。2026-09-27 に実 HTML で検証した。
+# 抽出は CSS セレクタ、定義はこの YAML に分離する（ADR-0003）。
+# リクエスト間隔・停止条件・User-Agent は crawler/internal/policy が持ち、ここでは変えられない。
+#
+# 仕組み（モッピー・ハピタスと同じく、一覧ページから全件を取る）：
+#   1. トップページのサイドメニュー（a.SideColCateMenu__link--category）からカテゴリを発見する。
+#      「お買い物」/shopping/shop/101〜111 の 11 件と「サービス」/earn/apply/1xx の 9 件、計 20 件（2026-09）。
+#      フッターにだけ出る /earn/apply/102・105、/shopping/shop/112 は 0 件の旧カテゴリなので対象外
+#   2. 一覧はサーバー側で描画され、30 件/ページ。?page=N でページ送りし、最終ページ番号は
+#      .com-pagination__list のリンクのテキスト（"1" "2" …）の最大値。並び順は既定（おすすめ順）
+#   3. 案件は li.ad-category__ad。案件名 .ad-category__ad__name--text、還元額 .ad-category__ad__pt
+#      （"2,000pt" または "1.5%"・"1.5％"）、詳細 URL は最初の a（/ad_details/N または /ad_details/N/）
+#   4. 還元額がアップ中の案件は「<s>3,000pt</s>→3,500pt」と旧額を取り消し線で併記するので、s を除いて
+#      「→3,500pt」を記録する（矢印は残るが、数値化は新額の 3,500 になる）
+#   5. 還元の無い案件（Amazon・ANAのふるさと納税など）は .ad-category__ad__pt が空か "0"。
+#      空は「ポイント対象外」、"0" はそのまま 0 ポイントとして記録する
+#   6. 詳細 URL は末尾スラッシュの有無が混在するので /ad_details/N/ に寄せる。
+#      /ad_details/redirect/ と /ad_details/56546/ は robots.txt で禁止（どちらも取得しない）
+#
+# ポイント単価は 1pt = 1円（交換所で 500 ちょびpt = 500 円分、2026-09-27）。sites.points_per_yen = 1。
+# 保存するのは案件名・還元額・URL・カテゴリのみ（AGENTS.md）。
+id: chobirich
+name: ちょびリッチ
+base_url: https://www.chobirich.com
+
+discovery:
+  url: /
+  link_selector: a.SideColCateMenu__link--category
+  param_pattern: '/(?P<section>shopping|earn)/(?P<kind>shop|apply)/(?P<cat>[0-9]+)'
+
+listing:
+  url_template: "/{section}/{kind}/{cat}?page={page}"
+  max_pages: 50
+  item_selector: li.ad-category__ad
+  name_selector: .ad-category__ad__name--text
+  reward_selector: .ad-category__ad__pt
+  reward_exclude_selector: s
+  reward_when_empty: ポイント対象外
+  link_selector: 'a[href*="/ad_details/"]'
+  pagination_selector: .com-pagination__list a
+
+url:
+  path_pattern: '^/ad_details/([0-9]+)'
+  path_template: '/ad_details/$1/'
+  external_id_regex: 'ad_details/([0-9]+)'

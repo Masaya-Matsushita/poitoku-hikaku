@@ -1,0 +1,17 @@
+User-Agent: *
+Sitemap: https://www.chobirich.com/sitemap.xml
+Allow: /ads.txt
+
+User-Agent: *
+Disallow: /regist/
+Disallow: /reminder/
+Disallow: /account/
+Disallow: /openid/
+Disallow: /member/
+Disallow: /ad_details/56546/
+Disallow: /ad_details/redirect/
+Disallow: /ad_details/forword_external_site/
+Disallow: /*utm_
+Disallow: /cm/ad/
+Disallow: /cm/om/
+Disallow: /cm/en/

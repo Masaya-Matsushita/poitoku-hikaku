@@ -388,6 +388,182 @@ func TestCanonicalKeepsAllParamsWhenNoRules(t *testing.T) {
 	}
 }
 
+func loadChobirich(t *testing.T) *site.Definition {
+	t.Helper()
+	d, err := site.LoadByID(filepath.Join("..", "..", "sites"), "chobirich")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
+func chobirichFixture(t *testing.T, name string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("..", "..", "testdata", "chobirich", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+// サービス（会員登録・資料請求）の一覧 1 ページ目：30 件、全 6 ページ。
+// 還元アップ中の案件は「<s>3,000pt</s>→3,500pt」なので、取り消し線の旧額を除いて「→3,500pt」を取る
+// （矢印は残るが数値化は新額になる）。
+func TestChobirichEarnListing(t *testing.T) {
+	d := loadChobirich(t)
+	doc, err := Parse(chobirichFixture(t, "list_earn_101_p1.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, skipped, err := Items(doc, d.Listing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 30 || skipped != 0 {
+		t.Fatalf("items = %d, skipped = %d, want 30 / 0", len(items), skipped)
+	}
+	byHref := map[string]Item{}
+	for i, it := range items {
+		if it.Name == "" || it.Href == "" || it.RewardRaw == "" {
+			t.Errorf("items[%d] に空欄: %+v", i, it)
+		}
+		if strings.Contains(it.Href, "#") {
+			t.Errorf("items[%d] は口コミへのリンクを拾っている: %+v", i, it)
+		}
+		if r := ParseReward(it.RewardRaw); r.Points == nil && r.Percent == nil {
+			t.Errorf("items[%d] の還元額 %q を数値化できない", i, it.RewardRaw)
+		}
+		byHref[it.Href] = it
+	}
+	it := byHref["/ad_details/50254/"]
+	if r := ParseReward(it.RewardRaw); it.Name != "palsystem（パルシステム）資料請求" || it.RewardRaw != "→3,500pt" || r.Points == nil || *r.Points != 3500 {
+		t.Errorf("取り消し線付きの案件 = %+v, want →3,500pt（3500 ポイント）", it)
+	}
+
+	last, err := LastPage(doc, d.Listing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if last != 6 {
+		t.Errorf("LastPage = %d, want 6", last)
+	}
+}
+
+// お買い物（総合通販）の一覧：率の還元（"1%" と全角の "1％"）、還元なし（空と "0"）が混在する。
+func TestChobirichShoppingListing(t *testing.T) {
+	d := loadChobirich(t)
+	doc, err := Parse(chobirichFixture(t, "list_shop_101_p1.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, skipped, err := Items(doc, d.Listing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 30 || skipped != 0 {
+		t.Fatalf("items = %d, skipped = %d, want 30 / 0", len(items), skipped)
+	}
+	percent, zero := 0, 0
+	byHref := map[string]Item{}
+	for i, it := range items {
+		r := ParseReward(it.RewardRaw)
+		switch {
+		case r.Percent != nil:
+			percent++
+		case r.Points != nil && *r.Points == 0:
+			zero++
+		case r.Points == nil:
+			t.Errorf("items[%d] の還元額 %q を数値化できない", i, it.RewardRaw)
+		}
+		byHref[it.Href] = it
+	}
+	if percent < 20 {
+		t.Errorf("率の案件が %d 件（お買い物は大半が率）", percent)
+	}
+	if zero != 3 {
+		t.Errorf("還元なしの案件 = %d, want 3（Amazon・ANAのふるさと納税は空、ヨリヤスは 0）", zero)
+	}
+	if got := byHref["/ad_details/18999"].RewardRaw; got != "ポイント対象外" {
+		t.Errorf("Amazon の還元額 = %q, want ポイント対象外", got)
+	}
+
+	last, err := LastPage(doc, d.Listing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if last != 2 {
+		t.Errorf("LastPage = %d, want 2（\">\" のリンクは数字でないので無視）", last)
+	}
+}
+
+func TestChobirichEmptyCategory(t *testing.T) {
+	d := loadChobirich(t)
+	doc, err := Parse(chobirichFixture(t, "list_empty.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, skipped, err := Items(doc, d.Listing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 0 || skipped != 0 {
+		t.Errorf("items = %d, skipped = %d, want 0 / 0", len(items), skipped)
+	}
+}
+
+// トップページのサイドメニューから 20 カテゴリ（お買い物 11 + サービス 9）を発見する。
+func TestChobirichTopDiscovery(t *testing.T) {
+	d := loadChobirich(t)
+	doc, err := Parse(chobirichFixture(t, "top.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	links, err := Links(doc, d.Discovery)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]string{}
+	for _, l := range links {
+		params, err := Params(l.Href, d.ParamPattern())
+		if err != nil {
+			t.Errorf("param_pattern に合わない: %+v", l)
+			continue
+		}
+		u, err := d.RenderURL(d.Listing.Templates()[0], params, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		seen[u] = l.Label
+	}
+	if len(seen) != 20 {
+		t.Errorf("カテゴリ = %d 件, want 20: %v", len(seen), seen)
+	}
+	for u, label := range map[string]string{
+		"https://www.chobirich.com/shopping/shop/101?page=1": "総合通販 ・オークション", // リンク内の <br> は空白になる
+		"https://www.chobirich.com/earn/apply/104?page=1":    "クレジットカード",
+	} {
+		if seen[u] != label {
+			t.Errorf("%s のラベル = %q, want %q", u, seen[u], label)
+		}
+	}
+}
+
+func TestChobirichCanonical(t *testing.T) {
+	d := loadChobirich(t)
+	for _, href := range []string{"/ad_details/50254", "/ad_details/50254/", "https://www.chobirich.com/ad_details/50254/#shopping_rate"} {
+		got, err := Canonical(href, d.Base(), d.URL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != "https://www.chobirich.com/ad_details/50254/" {
+			t.Errorf("Canonical(%q) = %q", href, got)
+		}
+		if id := ExternalID(got, d.ExternalIDPattern()); id != "50254" {
+			t.Errorf("ExternalID = %q", id)
+		}
+	}
+}
+
 func TestParseReward(t *testing.T) {
 	i := func(v int64) *int64 { return &v }
 	f := func(v float64) *float64 { return &v }
@@ -408,7 +584,10 @@ func TestParseReward(t *testing.T) {
 		{"1000ポイント", i(1000), nil},
 		{"ポイント対象外", i(0), nil},
 		{"対象外", i(0), nil},
+		{"0", i(0), nil},
+		{" ０ ", i(0), nil},
 		{"", nil, nil},
+		{"10", nil, nil}, // 単位の無い 0 以外の数は額か率か分からない
 		{"要確認", nil, nil},
 		{"P", nil, nil},
 	}
