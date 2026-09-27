@@ -97,6 +97,17 @@ async function ensureLabel({ github, owner, repo }) {
   }
 }
 
+// needs-owner-review が付いた PR にリポジトリオーナーをレビュワー指定する（気付けるようにするため）。
+// オーナー自身の PR には指定できない（GitHub API が拒否する）ので、その時は何もしない
+async function requestOwnerReview({ github, owner, repo, pr, core }) {
+  if (pr.user?.login === owner) return;
+  try {
+    await github.rest.pulls.requestReviewers({ owner, repo, pull_number: pr.number, reviewers: [owner] });
+  } catch (e) {
+    core.warning(`オーナーのレビュワー指定に失敗した: ${e.message}`);
+  }
+}
+
 // 同じ PR に既にコメントがあれば更新し、push ごとに増やさない
 async function upsertComment({ github, owner, repo, issue_number, body }) {
   const comments = await github.paginate(github.rest.issues.listComments, {
@@ -133,6 +144,7 @@ async function run({ github, context, core }) {
   if (d.ownerReview) {
     await ensureLabel({ github, owner, repo });
     await github.rest.issues.addLabels({ owner, repo, issue_number: pr.number, labels: [OWNER_REVIEW_LABEL] });
+    await requestOwnerReview({ github, owner, repo, pr, core });
     const body = [
       COMMENT_MARKER,
       `### 自動マージしない：\`${OWNER_REVIEW_LABEL}\``,
