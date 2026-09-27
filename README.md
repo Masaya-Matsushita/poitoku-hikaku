@@ -45,9 +45,10 @@ supabase/
   deploy.yml          main への push：supabase db push → Firebase Hosting へデプロイ
   crawl.yml           毎日 03:00 JST：クロールして Supabase に保存（workflow_dispatch で dry-run 可）。完了後に report.yml を呼ぶ
   report.yml          crawl_logs から reports/YYYY-MM-DD.md を生成し、PR を作って自動マージ（手動再生成は workflow_dispatch）
+  automerge.yml       PR の CI 完了後：条件を満たせば auto-merge を有効化、満たさなければ needs-owner-review（ADR-0006）
   （weekly-backup は今後追加）
 reports/              自動生成の日次 KPI レポート。手で編集しない。判定と要確認の項目がファイル先頭にある
-.github/scripts/      ワークフローから呼ぶスクリプト（dry-run のコメント生成、破壊的 SQL の検出）
+.github/scripts/      ワークフローから呼ぶスクリプト（dry-run のコメント生成、破壊的 SQL の検出、自動マージの判定）
 firebase.json         Hosting 設定（公開ディレクトリは web/dist）
 .tool-versions        Go / Node のバージョン固定（asdf）。CI もこれを読む
 ```

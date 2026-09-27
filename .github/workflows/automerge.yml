@@ -1,0 +1,90 @@
+# 自動マージの判定（ADR-0006）：PR の CI（ci.yml）が完了したら、条件を満たす PR に auto-merge を有効化し、
+# 満たさない PR に needs-owner-review ラベルを付ける。条件と判定は .github/scripts/automerge-gate.js。
+#
+# workflow_run で起動するので、このファイルと判定スクリプトは常に main の版が動く。PR 側で書き換えても
+# その PR 自身の判定には効かない（.github/** はオーナー承認なので、main に入るのはオーナーが見た版だけ）。
+#
+# auto-merge は GitHub App のトークンで有効化する。GITHUB_TOKEN で有効化するとマージの push が
+# deploy.yml などの後続ワークフローを起動しない（docs/lessons.md）。
+#
+# 判定を終えた head コミットに commit status「auto-merge-gate」を付ける。Branch protection の必須チェックに
+# 入れておくと、新しい push の後は判定が終わるまでマージされない（前のコミットの判定で auto-merge が発火しない）。
+# 判定が失敗した時は status を付けない（安全側。オーナーは管理者権限でマージできる）。
+name: Auto-merge
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions: {}
+
+concurrency:
+  group: automerge-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: auto-merge gate
+    # push（main）の CI は PR が無いので対象外。workflow_dispatch は report.yml が PR の CI を起動する経路
+    if: github.event.workflow_run.event == 'pull_request' || github.event.workflow_run.event == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      statuses: write
+    steps:
+      # main の判定スクリプトを読むだけ。PR のコードは取らない
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+
+      - name: 判定
+        id: judge
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const gate = require('./.github/scripts/automerge-gate.js');
+            await gate.run({ github, context, core });
+
+      - name: GitHub App のトークン
+        id: app-token
+        if: steps.judge.outputs.action == 'enable' || steps.judge.outputs.action == 'disable'
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.AUTOMERGE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTOMERGE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      # 必須チェックが揃っていれば gh はその場でマージし、揃っていなければ auto-merge を予約する。
+      # --match-head-commit で、判定したコミットから head が進んでいたらマージしない
+      - name: auto-merge を切り替える
+        if: steps.judge.outputs.action == 'enable' || steps.judge.outputs.action == 'disable'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR: ${{ steps.judge.outputs.pr }}
+          SHA: ${{ steps.judge.outputs.sha }}
+          ACTION: ${{ steps.judge.outputs.action }}
+        run: |
+          if [ "$ACTION" = "enable" ]; then
+            gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --auto --merge --match-head-commit "$SHA"
+            echo "PR #$PR の auto-merge を有効にした"
+          else
+            gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --disable-auto
+            echo "PR #$PR の auto-merge を解除した"
+          fi
+
+      - name: commit status を付ける
+        if: steps.judge.outputs.pr != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.judge.outputs.sha }}
+          DESCRIPTION: ${{ steps.judge.outputs.description }}
+          TARGET_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/statuses/${SHA}" \
+            -f state=success -f context=auto-merge-gate \
+            -f description="$DESCRIPTION" -f target_url="$TARGET_URL" >/dev/null
