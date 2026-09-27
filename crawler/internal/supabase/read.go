@@ -83,3 +83,22 @@ func (c *Client) ChangedCount(ctx context.Context, siteID, crawledOn string) (in
 		"offers.site_id": {"eq." + siteID},
 	})
 }
+
+// NewOfferCount は crawledOn に初めて観測した案件（offers.first_seen_on = crawledOn）の数を返す（report.Source）。
+func (c *Client) NewOfferCount(ctx context.Context, siteID, crawledOn string) (int, error) {
+	return c.count(ctx, "offers", url.Values{
+		"select":        {"id"},
+		"site_id":       {"eq." + siteID},
+		"first_seen_on": {"eq." + crawledOn},
+	})
+}
+
+// GoneOfferCount は prevDate を最後に観測されなくなった案件（offers.last_seen_on = prevDate）の数を返す（report.Source）。
+// 翌日のクロールで再び観測された案件は last_seen_on が進むので含まれない。
+func (c *Client) GoneOfferCount(ctx context.Context, siteID, prevDate string) (int, error) {
+	return c.count(ctx, "offers", url.Values{
+		"select":       {"id"},
+		"site_id":      {"eq." + siteID},
+		"last_seen_on": {"eq." + prevDate},
+	})
+}

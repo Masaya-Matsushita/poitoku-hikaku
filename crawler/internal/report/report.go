@@ -51,6 +51,11 @@ type Source interface {
 	EmptyRewardCount(ctx context.Context, siteID, crawledOn string) (int, error)
 	// ChangedCount は crawledOn に始まった区間の数（還元額が変わった案件 + 新規案件。ADR-0005 の変化率の実測）。
 	ChangedCount(ctx context.Context, siteID, crawledOn string) (int, error)
+	// NewOfferCount は crawledOn に初めて観測した案件の数（offers.first_seen_on = crawledOn）。
+	NewOfferCount(ctx context.Context, siteID, crawledOn string) (int, error)
+	// GoneOfferCount は prevDate を最後に観測されなくなった案件の数（offers.last_seen_on = prevDate）。
+	// 翌日の実行の後に呼ぶと「前日は掲載、当日は未観測」の数になる。
+	GoneOfferCount(ctx context.Context, siteID, prevDate string) (int, error)
 }
 
 // KPI の閾値（docs/02-kpi.md、ADR-0003）。
@@ -70,6 +75,10 @@ type SiteDay struct {
 	EmptyKnown   bool // EmptyRewards を取得できたか
 	Changed      int  // 当日に始まった区間の数（還元額の変化 + 新規）
 	ChangedKnown bool // Changed を取得できたか
+	// 案件数の増減の内訳。前日比 = 新規 − 消えた +（再掲載・URL の変化）。前日の実行が無い日は取らない
+	NewOffers  int  // 当日に初めて観測した案件
+	GoneOffers int  // 前日は掲載、当日は未観測の案件
+	ChurnKnown bool // NewOffers と GoneOffers を取得できたか
 }
 
 // ParsedRate は数値化率。案件 0 件なら 0。
@@ -171,6 +180,18 @@ func Build(ctx context.Context, src Source, date string, now time.Time, windowDa
 			} else {
 				d.Changed, d.ChangedKnown = ch, true
 			}
+			if d.PrevOffers >= 0 {
+				nw, err := src.NewOfferCount(ctx, s.ID, date)
+				var gone int
+				if err == nil {
+					gone, err = src.GoneOfferCount(ctx, s.ID, prevDate)
+				}
+				if err != nil {
+					r.Warnings = append(r.Warnings, fmt.Sprintf("%s: 新規・消えた案件の件数を取得できなかった（%v）", s.Name, err))
+				} else {
+					d.NewOffers, d.GoneOffers, d.ChurnKnown = nw, gone, true
+				}
+			}
 		}
 		r.Sites = append(r.Sites, d)
 	}
@@ -238,15 +259,23 @@ func warnings(r *Report) []string {
 			out = append(out, fmt.Sprintf("%s: 真の抽出失敗（reward_raw が空）が %d 件。セレクタか数値化ルールの修復対象", name, d.EmptyRewards))
 		}
 		if d.PrevOffers > 0 && float64(d.Log.OfferCount) < float64(d.PrevOffers)*dropAlertRatio {
-			out = append(out, fmt.Sprintf("%s: 案件数が前日比 50%% 未満（%d → %d）。構造変化の疑い（ADR-0003）", name, d.PrevOffers, d.Log.OfferCount))
+			out = append(out, fmt.Sprintf("%s: 案件数が前日比 50%% 未満（%d → %d%s）。構造変化の疑い（ADR-0003）", name, d.PrevOffers, d.Log.OfferCount, churn(d)))
 		} else if d.PrevOffers > 0 && d.Log.OfferCount < d.PrevOffers {
-			out = append(out, fmt.Sprintf("%s: 案件数が前日より減少（%d → %d）。単調増加の KPI に注意", name, d.PrevOffers, d.Log.OfferCount))
+			out = append(out, fmt.Sprintf("%s: 案件数が前日より減少（%d → %d%s）。単調増加の KPI に注意", name, d.PrevOffers, d.Log.OfferCount, churn(d)))
 		}
 	}
 	if r.Week.Total > 0 && r.Week.Rate() < successRateTarget {
 		out = append(out, fmt.Sprintf("直近 7 日のクロール成功率 %s が目標 95%% を下回る（%d / %d サイト×日）", pct(r.Week.Rate()), r.Week.Success, r.Week.Total))
 	}
 	return out
+}
+
+// churn は減少の警告に添える内訳（「、新規 5・消えた 31」）。取得できていなければ空。
+func churn(d SiteDay) string {
+	if !d.ChurnKnown {
+		return ""
+	}
+	return fmt.Sprintf("、新規 %d・消えた %d", d.NewOffers, d.GoneOffers)
 }
 
 // Render は Markdown を返す。出力は決定的（同じ入力なら同じ文字列）。
@@ -269,11 +298,11 @@ func Render(r *Report) string {
 	}
 
 	w("## サイト別（%s）\n\n", r.Date)
-	w("| サイト | status | 案件数 | 前日比 | 数値化率 | 真の抽出失敗 | 還元額の変化 | リクエスト | 所要 | 打ち切り理由 | 版 |\n")
-	w("|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|\n")
+	w("| サイト | status | 案件数 | 前日比 | 新規 | 消えた | 数値化率 | 真の抽出失敗 | 還元額の変化 | リクエスト | 所要 | 打ち切り理由 | 版 |\n")
+	w("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|\n")
 	for _, d := range r.Sites {
 		if d.Log == nil {
-			w("| %s | 未実行 | - | - | - | - | - | - | - | - | - |\n", d.Site.Name)
+			w("| %s | 未実行 | - | - | - | - | - | - | - | - | - | - | - |\n", d.Site.Name)
 			continue
 		}
 		l := d.Log
@@ -289,11 +318,17 @@ func Render(r *Report) string {
 		if d.ChangedKnown {
 			changed = num(d.Changed)
 		}
-		w("| %s | %s | %s | %s | %s | %s | %s | %d | %s | %s | %s |\n",
-			d.Site.Name, l.Status, num(l.OfferCount), diff, pct(d.ParsedRate()), empty, changed, l.RequestCount,
+		newOffers, gone := "-", "-"
+		if d.ChurnKnown {
+			newOffers, gone = num(d.NewOffers), num(d.GoneOffers)
+		}
+		w("| %s | %s | %s | %s | %s | %s | %s | %s | %s | %d | %s | %s | %s |\n",
+			d.Site.Name, l.Status, num(l.OfferCount), diff, newOffers, gone, pct(d.ParsedRate()), empty, changed, l.RequestCount,
 			duration(l), dash(l.AbortReason), dash(l.CrawlerVersion))
 	}
-	w("\n「還元額の変化」は当日に始まった区間の数（還元額が変わった案件 + 新規案件）。ADR-0005 の容量試算の前提（変化率）を実測する。\n\n")
+	w("\n「新規」は当日に初めて観測した案件、「消えた」は前日は掲載・当日は未観測の案件。前日比 = 新規 − 消えた +（再掲載・URL の変化）。" +
+		"エラー・打ち切りが無くリクエスト数も平常なら、「消えた」は対象サイト側の掲載終了の可能性が高い（docs/02-kpi.md）。\n\n")
+	w("「還元額の変化」は当日に始まった区間の数（還元額が変わった案件 + 新規案件）。ADR-0005 の容量試算の前提（変化率）を実測する。\n\n")
 
 	w("## KPI\n\n")
 	w("| KPI | 目標 | 直近 7 日 | 直近 %d 日 |\n", r.Month.Days)

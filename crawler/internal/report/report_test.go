@@ -16,11 +16,23 @@ type fakeSource struct {
 	logs    []CrawlLog
 	empty   map[string]int // "site|date" → 件数
 	changed map[string]int // "site|date" → 件数
+	newOnes map[string]int // "site|date" → first_seen_on = date の件数
+	gone    map[string]int // "site|date" → last_seen_on = date の件数
 	err     error
+	// churnErr は NewOfferCount / GoneOfferCount だけを失敗させる
+	churnErr error
 }
 
 func (f *fakeSource) ChangedCount(_ context.Context, siteID, date string) (int, error) {
 	return f.changed[siteID+"|"+date], nil
+}
+
+func (f *fakeSource) NewOfferCount(_ context.Context, siteID, date string) (int, error) {
+	return f.newOnes[siteID+"|"+date], f.churnErr
+}
+
+func (f *fakeSource) GoneOfferCount(_ context.Context, siteID, prevDate string) (int, error) {
+	return f.gone[siteID+"|"+prevDate], f.churnErr
 }
 
 func (f *fakeSource) Sites(context.Context) ([]Site, error) { return f.sites, f.err }
@@ -86,6 +98,9 @@ func scenario() *fakeSource {
 		},
 		empty:   map[string]int{"moppy|2026-09-24": 2},
 		changed: map[string]int{"moppy|2026-09-24": 57, "hapitas|2026-09-24": 900},
+		// 9/24 moppy：1791 → 1700 = 新規 3 − 消えた 94。hapitas は打ち切りで 1873 件が未観測
+		newOnes: map[string]int{"moppy|2026-09-24": 3},
+		gone:    map[string]int{"moppy|2026-09-23": 94, "hapitas|2026-09-23": 1873},
 	}
 }
 
@@ -107,6 +122,10 @@ func TestBuildComputesKPIsAndWarnings(t *testing.T) {
 	}
 	if h.Log == nil || h.Log.Status != "aborted" || h.PrevOffers != 2773 {
 		t.Errorf("hapitas = %+v", h)
+	}
+	// 新規は当日、消えたは前日の日付で引く
+	if !m.ChurnKnown || m.NewOffers != 3 || m.GoneOffers != 94 || !h.ChurnKnown || h.NewOffers != 0 || h.GoneOffers != 1873 {
+		t.Errorf("内訳 moppy = %d / %d, hapitas = %d / %d", m.NewOffers, m.GoneOffers, h.NewOffers, h.GoneOffers)
 	}
 	// 成功率（サイト×日）：moppy は 9/22〜24 の 3 日（success, success, partial → 3 成功）、
 	// hapitas は 9/23〜24 の 2 日（success, aborted → 1 成功）→ 4 / 5
@@ -136,16 +155,44 @@ func TestBuildComputesKPIsAndWarnings(t *testing.T) {
 	joined := strings.Join(r.Warnings, "\n")
 	for _, want := range []string{
 		"ハピタス: 打ち切り（http_429）",
-		"ハピタス: 案件数が前日比 50% 未満（2773 → 900）",
+		"ハピタス: 案件数が前日比 50% 未満（2773 → 900、新規 0・消えた 1873）",
 		"モッピー: 一部エラー（1 件）",
 		"モッピー: 数値化率 98.8% が目標 99% を下回る",
 		"モッピー: 真の抽出失敗（reward_raw が空）が 2 件",
-		"モッピー: 案件数が前日より減少（1791 → 1700）",
+		"モッピー: 案件数が前日より減少（1791 → 1700、新規 3・消えた 94）",
 		"直近 7 日のクロール成功率 80.0% が目標 95% を下回る（4 / 5 サイト×日）",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("警告に %q が無い:\n%s", want, joined)
 		}
+	}
+}
+
+func TestBuildChurn(t *testing.T) {
+	// 前日の実行が無いサイト（9/22 の moppy）は内訳を取らない
+	r, err := Build(context.Background(), scenario(), "2026-09-22", ts("2026-09-22 03:20:00"), 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := r.Sites[1]; m.ChurnKnown {
+		t.Errorf("前日の実行が無いのに内訳を取った: %+v", m)
+	}
+
+	// 取得に失敗したら警告に出し、表は「-」、減少の警告は内訳なし
+	src := scenario()
+	src.churnErr = errors.New("timeout")
+	r, err = Build(context.Background(), src, "2026-09-24", ts("2026-09-24 03:20:00"), 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(r.Warnings, "\n")
+	for _, want := range []string{"モッピー: 新規・消えた案件の件数を取得できなかった", "モッピー: 案件数が前日より減少（1791 → 1700）。"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("警告に %q が無い:\n%s", want, joined)
+		}
+	}
+	if !strings.Contains(Render(r), "| モッピー | partial | 1,700 | -91 | - | - |") {
+		t.Error("取得失敗の内訳が「-」になっていない")
 	}
 }
 
