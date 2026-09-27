@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        site: [moppy, hapitas]
+        site: [moppy, hapitas, chobirich]
     defaults:
       run:
         working-directory: crawler
