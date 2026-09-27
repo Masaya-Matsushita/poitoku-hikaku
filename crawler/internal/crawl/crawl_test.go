@@ -177,6 +177,60 @@ func TestRunUnpagedMultiTemplateAndTruncation(t *testing.T) {
 	}
 }
 
+// ポイントタウン型：パスに group と slug を持つカテゴリ、/category/<group>/<slug>/<N> のページ送り
+// （最終ページ番号はリンクのテキスト）。robots.txt は AdsBot-Google 向けにだけ /category/ と /item/ を
+// 禁止しているので、* のグループに従うこのクローラーは止まらないこと。
+func TestRunPointtownPagingAndRobotsGroups(t *testing.T) {
+	d, err := site.LoadByID(filepath.Join("..", "..", "sites"), "pointtown")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pfixture := func(name string) []byte {
+		b, err := os.ReadFile(filepath.Join("..", "..", "testdata", "pointtown", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	menu := `<ul>
+<li><a href="/category/shopping/mailorder" class="u-expand-link"><img alt=""></a></li>
+<li><a href="/category/shopping/mailorder">総合通販</a></li>
+<li><a href="/category">サービス利用で貯める</a></li>
+</ul>`
+	page := pfixture("category_shopping_mailorder.html") // 全 30 件、最終ページ 2
+	f := &fakeFetcher{responses: map[string]fakeResponse{
+		"https://www.pointtown.com/robots.txt":                    {body: pfixture("robots.txt")},
+		"https://www.pointtown.com/category":                      {body: []byte(menu)},
+		"https://www.pointtown.com/category/shopping/mailorder/1": {body: page},
+		// 2 ページ目は同じ HTML を返す（重複排除で 20 件のまま → 全 30 件に届かず取りこぼしとして記録）
+		"https://www.pointtown.com/category/shopping/mailorder/2": {body: page},
+	}}
+	st := &fakeStore{}
+	res, err := Run(context.Background(), d, f, st, Options{Now: fixedNow()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := res.Summary
+	if s.Status != "success" {
+		t.Errorf("Status = %s, AbortReason = %s, Errors = %v", s.Status, s.AbortReason, s.Errors)
+	}
+	if s.CategoryCount != 1 {
+		t.Errorf("CategoryCount = %d, want 1（画像リンクと /category は除外）", s.CategoryCount)
+	}
+	// robots + discovery + 2 ページ。最終ページ（2）で打ち切り、3 ページ目は取らない
+	if s.RequestCount != 4 {
+		t.Errorf("RequestCount = %d, want 4, calls = %v", s.RequestCount, f.calls)
+	}
+	if s.OfferCount != 20 || s.ParsedCount != 20 || s.TruncatedCategories != 1 {
+		t.Errorf("OfferCount = %d, ParsedCount = %d, TruncatedCategories = %d", s.OfferCount, s.ParsedCount, s.TruncatedCategories)
+	}
+	for _, o := range st.saved {
+		if o.Category != "総合通販" || o.ExternalID == "" || !strings.HasPrefix(o.URL, "https://www.pointtown.com/item/") {
+			t.Errorf("カテゴリ・URL・external_id に問題: %+v", o)
+		}
+	}
+}
+
 func fixedNow() func() time.Time {
 	// 2026-09-22 18:30 UTC = 2026-09-23 03:30 JST → crawled_on は JST の日付
 	return func() time.Time { return time.Date(2026, 9, 22, 18, 30, 0, 0, time.UTC) }

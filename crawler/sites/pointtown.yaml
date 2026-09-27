@@ -1,0 +1,44 @@
+# ポイントタウン（www.pointtown.com）のクロール定義。2026-09-27 に実 HTML で検証した。
+# 抽出は CSS セレクタ、定義はこの YAML に分離する（ADR-0003）。
+# リクエスト間隔・停止条件・User-Agent は crawler/internal/policy が持ち、ここでは変えられない。
+#
+# 仕組み：
+#   1. カテゴリ一覧ページ（/category）のリンクから /category/<shopping|service>/<slug> を集める
+#      （2026-09 時点でショッピング 15・サービス 11 の 26 カテゴリ）。同じページにラベルの無い画像リンク
+#      （.u-expand-link）が先に並ぶので除き、テキストのあるリンクからカテゴリ名を取る
+#   2. カテゴリページはサーバー側で描画され、20 件/ページ。2 ページ目以降は /category/<group>/<slug>/<N>
+#      （/1 は 1 ページ目と同じ）。最終ページ番号は .c-pager__nav のリンクのテキストの最大値。
+#      範囲外のページは 404 を返すので、最終ページで打ち切る。「次の20件を見る」は JS だが、
+#      番号リンクは通常のリンクなのでそちらを使う
+#   3. 案件は .l-card__item。案件名は一覧のテキストが途中で「…」に省略されるため、全文が入る
+#      サムネイル画像の alt から取る。還元額は .c-af-incentive__point（"12,000" または "3%"）。
+#      固定額の単位 pt は CSS で描かれ HTML に無いので、reward_unit で付ける。
+#      ポイントアップ中の案件は元の額（.c-af-incentive__point-origin）も並ぶが、今の額だけ取る
+#   4. 詳細 URL は /item/N。ポイント獲得の遷移用 /item/redirect/ は robots.txt で禁止なので触らない
+#
+# 保存するのは案件名・還元額・URL・カテゴリのみ（AGENTS.md）。
+id: pointtown
+name: ポイントタウン
+base_url: https://www.pointtown.com
+
+discovery:
+  url: /category
+  link_selector: 'a[href^="/category/"]:not(.u-expand-link)'
+  param_pattern: '^/category/(?P<group>shopping|service)/(?P<slug>[a-z0-9-]+)$'
+
+listing:
+  url_template: "/category/{group}/{slug}/{page}"
+  max_pages: 50
+  item_selector: ".l-column__main .l-card > .l-card__item"
+  name_selector: ".c-card__l-thumb img"
+  name_attr: alt
+  reward_selector: .c-af-incentive__point
+  reward_unit: pt
+  link_selector: ".c-card__ttl a"
+  pagination_selector: ".c-pager__nav a"
+  total_selector: ".l-column__main .c-sec__ttl small"
+
+url:
+  path_pattern: '^/item/([0-9]+)'
+  path_template: '/item/$1'
+  external_id_regex: '/item/([0-9]+)'
