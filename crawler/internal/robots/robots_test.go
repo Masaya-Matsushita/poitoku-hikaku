@@ -99,3 +99,52 @@ func TestNoRulesAllowsEverything(t *testing.T) {
 		t.Error("nil Rules で拒否された")
 	}
 }
+
+// ちょびリッチの robots.txt は User-agent: * のグループが 2 つあり、1 つ目は Allow: /ads.txt だけ、
+// Disallow は 2 つ目にある。同じ UA のグループは結合する（RFC 9309 2.2.1）。
+func TestChobirichRobotsMergesWildcardGroups(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join("..", "..", "testdata", "chobirich", "robots.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := Parse(body)
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"/", true},
+		{"/ads.txt", true},
+		{"/shopping/shop/101?page=2", true},
+		{"/earn/apply/104?page=1", true},
+		{"/ad_details/1895190/", true},
+		{"/ad_details/redirect/1666103", false},
+		{"/ad_details/56546/", false},
+		{"/member/", false},
+		{"/regist/", false},
+		{"/shopping/shop/101?utm_source=x", false},
+	}
+	for _, c := range cases {
+		if got := r.Allowed(policy.UserAgent, c.path); got != c.want {
+			t.Errorf("Allowed(%q) = %v, want %v", c.path, got, c.want)
+		}
+	}
+}
+
+func TestSpecificGroupsAreMerged(t *testing.T) {
+	r := Parse([]byte(`
+User-agent: poitoku-hikaku
+Disallow: /a/
+
+User-agent: *
+Disallow: /
+
+User-agent: poitoku-hikaku
+Disallow: /b/
+`))
+	if r.Allowed(policy.UserAgent, "/a/x") || r.Allowed(policy.UserAgent, "/b/x") {
+		t.Error("自分向けの 2 つのグループが結合されていない")
+	}
+	if !r.Allowed(policy.UserAgent, "/c") {
+		t.Error("自分向けグループがあるのに * グループの規則が混ざっている")
+	}
+}
