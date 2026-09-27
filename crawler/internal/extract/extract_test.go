@@ -622,3 +622,180 @@ func fmtReward(r Reward) string {
 		return "nothing"
 	}
 }
+
+func loadPointtown(t *testing.T) *site.Definition {
+	t.Helper()
+	d, err := site.LoadByID(filepath.Join("..", "..", "sites"), "pointtown")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
+func pointtownFixture(t *testing.T, name string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("..", "..", "testdata", "pointtown", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+func TestPointtownCreditListing(t *testing.T) {
+	d := loadPointtown(t)
+	doc, err := Parse(pointtownFixture(t, "category_service_creditcard_p1.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, skipped, err := Items(doc, d.Listing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 20 || skipped != 0 {
+		t.Fatalf("items = %d, skipped = %d, want 20 / 0", len(items), skipped)
+	}
+	base, re := d.Base(), d.ExternalIDPattern()
+	for i, it := range items {
+		if it.Name == "" || it.Href == "" || it.RewardRaw == "" {
+			t.Errorf("items[%d] に空欄: %+v", i, it)
+		}
+		// 一覧のテキストは「…」で省略されるが、画像の alt には全文がある
+		if strings.HasSuffix(it.Name, "…") {
+			t.Errorf("items[%d] の案件名が省略されている: %q", i, it.Name)
+		}
+		// 単位の無い "12,000" に reward_unit の pt が付き、ポイントとして数値化できる
+		if r := ParseReward(it.RewardRaw); r.Points == nil || !strings.HasSuffix(it.RewardRaw, "pt") {
+			t.Errorf("items[%d] の還元額 %q がポイントとして数値化できない", i, it.RewardRaw)
+		}
+		u, err := Canonical(it.Href, base, d.URL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !regexp.MustCompile(`^https://www\.pointtown\.com/item/[0-9]+$`).MatchString(u) {
+			t.Errorf("items[%d] の URL が詳細 URL でない: %s", i, u)
+		}
+		if ExternalID(u, re) == "" {
+			t.Errorf("items[%d] の external_id が取れない: %s", i, u)
+		}
+	}
+	// ポイントアップ中の案件は元の額（9,250）ではなく今の額（15,000）を取る
+	found := false
+	for _, it := range items {
+		if strings.HasPrefix(it.Name, "三菱ＵＦＪカード・プラチナ・アメリカン・エキスプレス") {
+			found = true
+			if it.RewardRaw != "15,000pt" {
+				t.Errorf("UP 中の案件の還元額 = %q, want 15,000pt", it.RewardRaw)
+			}
+			if it.Name != "三菱ＵＦＪカード・プラチナ・アメリカン・エキスプレス®・カード" {
+				t.Errorf("案件名 = %q（alt の全文が取れていない）", it.Name)
+			}
+		}
+	}
+	if !found {
+		t.Error("UP 中の案件がフィクスチャに見つからない")
+	}
+	if total, ok := Total(doc, d.Listing); !ok || total != 107 {
+		t.Errorf("Total = %d, %v, want 107", total, ok)
+	}
+	if last, _ := LastPage(doc, d.Listing); last != 6 {
+		t.Errorf("LastPage = %d, want 6（20 件/ページで 107 件）", last)
+	}
+}
+
+func TestPointtownShoppingListingHasPercentRewards(t *testing.T) {
+	d := loadPointtown(t)
+	doc, err := Parse(pointtownFixture(t, "category_shopping_mailorder.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, skipped, err := Items(doc, d.Listing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 20 || skipped != 0 {
+		t.Fatalf("items = %d, skipped = %d, want 20 / 0", len(items), skipped)
+	}
+	percent := 0
+	for _, it := range items {
+		r := ParseReward(it.RewardRaw)
+		switch {
+		case r.Percent != nil:
+			percent++
+			if strings.HasSuffix(it.RewardRaw, "pt") {
+				t.Errorf("率表記に単位が付いた: %q", it.RewardRaw)
+			}
+		case r.Points != nil:
+		default:
+			t.Errorf("数値化できない: %q (%s)", it.RewardRaw, it.Name)
+		}
+	}
+	if percent < 10 {
+		t.Errorf("率表記 %d 件（想定：大半が率）", percent)
+	}
+	if total, ok := Total(doc, d.Listing); !ok || total != 30 {
+		t.Errorf("Total = %d, %v, want 30", total, ok)
+	}
+	if last, _ := LastPage(doc, d.Listing); last != 2 {
+		t.Errorf("LastPage = %d, want 2", last)
+	}
+}
+
+func TestPointtownCategoryDiscovery(t *testing.T) {
+	d := loadPointtown(t)
+	doc, err := Parse(pointtownFixture(t, "category_index.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	links, err := Links(doc, d.Discovery)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cats := map[string]string{}
+	for _, l := range links {
+		params, err := Params(l.Href, d.ParamPattern())
+		if err != nil {
+			continue // /category 自体など、一覧でないリンク
+		}
+		if l.Label == "" {
+			t.Errorf("ラベルが空: %+v", l)
+		}
+		cats[params["group"]+"/"+params["slug"]] = l.Label
+	}
+	if len(cats) != 26 {
+		t.Errorf("カテゴリ数 = %d, want 26: %v", len(cats), cats)
+	}
+	// 同じ slug がショッピングとサービスの両方にある（beauty / other）ので group で区別する
+	for key, want := range map[string]string{
+		"service/creditcard": "クレジットカード",
+		"shopping/beauty":    "ビューティー/コスメ",
+		"service/beauty":     "美容/エステ",
+		"shopping/other":     "その他(ショッピング)",
+	} {
+		if cats[key] != want {
+			t.Errorf("%s のラベル = %q, want %q", key, cats[key], want)
+		}
+	}
+}
+
+func TestItemsRewardUnitOnlyForBareNumbers(t *testing.T) {
+	doc, err := Parse([]byte(`<ul>
+<li class="i"><a href="/a" class="n">A</a><p class="r">12,000</p></li>
+<li class="i"><a href="/b" class="n">B</a><p class="r">3.5%</p></li>
+<li class="i"><a href="/c" class="n">C</a><p class="r">最大500</p></li>
+<li class="i"><a href="/d" class="n">D</a></li>
+</ul>`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := site.Listing{ItemSelector: ".i", NameSelector: ".n", RewardSelector: ".r", LinkSelector: "a", RewardUnit: "pt"}
+	items, _, err := Items(doc, l)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"12,000pt", "3.5%", "最大500", ""}
+	for i, it := range items {
+		if it.RewardRaw != want[i] {
+			t.Errorf("items[%d].RewardRaw = %q, want %q", i, it.RewardRaw, want[i])
+		}
+	}
+}
