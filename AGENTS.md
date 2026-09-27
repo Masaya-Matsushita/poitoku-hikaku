@@ -48,6 +48,15 @@
 オーナー承認のパスに触れる変更は、無関係な変更と同じ PR に混ぜない（混ぜると全体が承認待ちになる）。
 `reports/` は `report.yml` が毎日生成して自動マージする。手で編集しない。
 
+## Issue とラベル
+
+作業は GitHub Issues で渡す。テンプレートは `.github/ISSUE_TEMPLATE/task.md`（目的・完了条件・触ってよいパス）。
+ラベル（`ready` / `in-progress` / `needs-clarification` / `proposal` / `priority:*`）の意味は `docs/05-routines.md`。
+
+- 夜間 Routine は `.claude/routines/nightly-improve.md` に従い、`ready` を 1 晩 1 件だけ実装する
+- 対話セッションが改善を思いついたら、実装せず `proposal` を付けて起票してよい。`ready` を付けるのはオーナー
+- Issue を閉じる PR には本文に `Closes #N` を書く
+
 ## 存在する GitHub Secrets（値は読めない。名前だけ知っておく）
 
 - `SUPABASE_URL` — `https://<project-id>.supabase.co`
@@ -75,4 +84,4 @@ publishable key（`sb_publishable_...`）は公開してよい鍵なので Secre
 ## 迷ったら
 
 - 「何もしない」は正解のひとつ。無意味な変更を積まない
-- 判断に迷う変更は、実装せずPRの代わりに `docs/proposals/` に提案を書く
+- 判断に迷う変更は、実装せず `proposal` ラベルの Issue として起票する（長い設計の提案は `docs/proposals/` に書き、Issue から参照する）

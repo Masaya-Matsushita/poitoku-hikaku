@@ -20,5 +20,9 @@ firebase-debug.log
 supabase/.temp/
 supabase/.branches/
 
+# claude code（.claude/routines/ は Routine のプロンプトなので追跡する）
+.claude/worktrees/
+.claude/settings.local.json
+
 # os / editor
 .DS_Store
