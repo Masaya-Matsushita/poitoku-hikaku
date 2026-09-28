@@ -5,6 +5,7 @@ package report
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
@@ -56,7 +57,25 @@ type Source interface {
 	// GoneOfferCount は prevDate を最後に観測されなくなった案件の数（offers.last_seen_on = prevDate）。
 	// 翌日の実行の後に呼ぶと「前日は掲載、当日は未観測」の数になる。
 	GoneOfferCount(ctx context.Context, siteID, prevDate string) (int, error)
+	// GoneOfferDetails は GoneOfferCount と同じ条件の案件の名前とカテゴリを名前順で返す（消えた案件の内訳用）。
+	GoneOfferDetails(ctx context.Context, siteID, prevDate string) ([]GoneOffer, error)
 }
+
+// GoneOffer は消えた案件（offers.last_seen_on = prevDate）の名前とカテゴリ。
+type GoneOffer struct {
+	Name     string
+	Category string // 空は「未分類」
+}
+
+// GoneCategory は「消えた案件」のカテゴリ別内訳の 1 行。
+type GoneCategory struct {
+	Category string
+	Count    int
+	Examples []string // 名前順で最大 goneCategoryExamples 件
+}
+
+// goneCategoryExamples はカテゴリごとに載せる例の件数（Issue #20）。
+const goneCategoryExamples = 5
 
 // KPI の閾値（docs/02-kpi.md、ADR-0003）。
 const (
@@ -79,6 +98,8 @@ type SiteDay struct {
 	NewOffers  int  // 当日に初めて観測した案件
 	GoneOffers int  // 前日は掲載、当日は未観測の案件
 	ChurnKnown bool // NewOffers と GoneOffers を取得できたか
+	// GoneCategories は消えた案件のカテゴリ別内訳。ChurnKnown かつ GoneOffers > 0 の時だけ埋まる
+	GoneCategories []GoneCategory
 }
 
 // ParsedRate は数値化率。案件 0 件なら 0。
@@ -190,6 +211,14 @@ func Build(ctx context.Context, src Source, date string, now time.Time, windowDa
 					r.Warnings = append(r.Warnings, fmt.Sprintf("%s: 新規・消えた案件の件数を取得できなかった（%v）", s.Name, err))
 				} else {
 					d.NewOffers, d.GoneOffers, d.ChurnKnown = nw, gone, true
+					if gone > 0 {
+						details, err := src.GoneOfferDetails(ctx, s.ID, prevDate)
+						if err != nil {
+							r.Warnings = append(r.Warnings, fmt.Sprintf("%s: 消えた案件の内訳を取得できなかった（%v）", s.Name, err))
+						} else {
+							d.GoneCategories = groupGoneOffers(details)
+						}
+					}
 				}
 			}
 		}
@@ -270,6 +299,35 @@ func warnings(r *Report) []string {
 	return out
 }
 
+// groupGoneOffers は消えた案件をカテゴリ別に集計する。件数の多い順、同数はカテゴリ名順。
+// 各カテゴリの例は名前順で最大 goneCategoryExamples 件。
+func groupGoneOffers(offers []GoneOffer) []GoneCategory {
+	byCategory := map[string][]string{}
+	for _, o := range offers {
+		cat := o.Category
+		if cat == "" {
+			cat = "未分類"
+		}
+		byCategory[cat] = append(byCategory[cat], o.Name)
+	}
+	out := make([]GoneCategory, 0, len(byCategory))
+	for cat, names := range byCategory {
+		sort.Strings(names)
+		examples := names
+		if len(examples) > goneCategoryExamples {
+			examples = examples[:goneCategoryExamples]
+		}
+		out = append(out, GoneCategory{Category: cat, Count: len(names), Examples: examples})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Count != out[j].Count {
+			return out[i].Count > out[j].Count
+		}
+		return out[i].Category < out[j].Category
+	})
+	return out
+}
+
 // churn は減少の警告に添える内訳（「、新規 5・消えた 31」）。取得できていなければ空。
 func churn(d SiteDay) string {
 	if !d.ChurnKnown {
@@ -329,6 +387,19 @@ func Render(r *Report) string {
 	w("\n「新規」は当日に初めて観測した案件、「消えた」は前日は掲載・当日は未観測の案件。前日比 = 新規 − 消えた +（再掲載・URL の変化）。" +
 		"エラー・打ち切りが無くリクエスト数も平常なら、「消えた」は対象サイト側の掲載終了の可能性が高い（docs/02-kpi.md）。\n\n")
 	w("「還元額の変化」は当日に始まった区間の数（還元額が変わった案件 + 新規案件）。ADR-0005 の容量試算の前提（変化率）を実測する。\n\n")
+
+	for _, d := range r.Sites {
+		if len(d.GoneCategories) == 0 {
+			continue
+		}
+		w("### 消えた案件の内訳（%s）\n\n", d.Site.Name)
+		w("| カテゴリ | 件数 | 例 |\n")
+		w("|---|---:|---|\n")
+		for _, c := range d.GoneCategories {
+			w("| %s | %d | %s |\n", c.Category, c.Count, strings.Join(c.Examples, "、"))
+		}
+		w("\n")
+	}
 
 	w("## KPI\n\n")
 	w("| KPI | 目標 | 直近 7 日 | 直近 %d 日 |\n", r.Month.Days)
