@@ -27,6 +27,8 @@ func newReadServer(t *testing.T) (*httptest.Server, *[]string) {
 		case "/rest/v1/offers":
 			q := r.URL.Query()
 			switch {
+			case q.Get("select") == "name,category" && q.Get("site_id") == "eq.moppy" && q.Get("last_seen_on") == "eq.2026-09-22":
+				w.Write([]byte(`[{"name":"案件A","category":"アプリ"},{"name":"案件B","category":null}]`))
 			case q.Get("site_id") == "eq.moppy" && q.Get("first_seen_on") == "eq.2026-09-23":
 				w.Header().Set("Content-Range", "0-0/3")
 				w.Write([]byte(`[{"id":1}]`))
@@ -146,6 +148,26 @@ func TestNewAndGoneOfferCount(t *testing.T) {
 			if !strings.Contains((*seen)[i], w) {
 				t.Errorf("クエリ %d に %q が無い: %s", i, w, (*seen)[i])
 			}
+		}
+	}
+}
+
+func TestGoneOfferDetails(t *testing.T) {
+	srv, seen := newReadServer(t)
+	c, _ := New(srv.URL, "sb_secret_test")
+	ctx := context.Background()
+
+	got, err := c.GoneOfferDetails(ctx, "moppy", "2026-09-22")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].Name != "案件A" || got[0].Category != "アプリ" || got[1].Name != "案件B" || got[1].Category != "" {
+		t.Errorf("got = %+v", got)
+	}
+	q := (*seen)[0]
+	for _, want := range []string{"select=name%2Ccategory", "site_id=eq.moppy", "last_seen_on=eq.2026-09-22", "order=name.asc"} {
+		if !strings.Contains(q, want) {
+			t.Errorf("クエリに %q が無い: %s", want, q)
 		}
 	}
 }

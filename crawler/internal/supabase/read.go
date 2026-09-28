@@ -102,3 +102,31 @@ func (c *Client) GoneOfferCount(ctx context.Context, siteID, prevDate string) (i
 		"last_seen_on": {"eq." + prevDate},
 	})
 }
+
+// GoneOfferDetails は GoneOfferCount と同じ条件（offers.last_seen_on = prevDate）の案件の
+// 名前とカテゴリを名前順で返す（report.Source）。日次レポートの「消えた案件」の内訳に使う。
+func (c *Client) GoneOfferDetails(ctx context.Context, siteID, prevDate string) ([]report.GoneOffer, error) {
+	var rows []struct {
+		Name     string  `json:"name"`
+		Category *string `json:"category"`
+	}
+	err := c.do(ctx, http.MethodGet, "offers",
+		url.Values{
+			"select":       {"name,category"},
+			"site_id":      {"eq." + siteID},
+			"last_seen_on": {"eq." + prevDate},
+			"order":        {"name.asc"},
+		}, nil, nil, &rows)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]report.GoneOffer, 0, len(rows))
+	for _, r := range rows {
+		g := report.GoneOffer{Name: r.Name}
+		if r.Category != nil {
+			g.Category = *r.Category
+		}
+		out = append(out, g)
+	}
+	return out, nil
+}

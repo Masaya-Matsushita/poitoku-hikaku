@@ -21,6 +21,13 @@ type fakeSource struct {
 	err     error
 	// churnErr は NewOfferCount / GoneOfferCount だけを失敗させる
 	churnErr error
+
+	goneDetails    map[string][]GoneOffer // "site|prevDate" → 消えた案件の名前・カテゴリ
+	goneDetailsErr error                  // GoneOfferDetails だけを失敗させる
+}
+
+func (f *fakeSource) GoneOfferDetails(_ context.Context, siteID, prevDate string) ([]GoneOffer, error) {
+	return f.goneDetails[siteID+"|"+prevDate], f.goneDetailsErr
 }
 
 func (f *fakeSource) ChangedCount(_ context.Context, siteID, date string) (int, error) {
@@ -254,6 +261,69 @@ func TestRenderGolden(t *testing.T) {
 	}
 	if got != string(want) {
 		t.Errorf("ゴールデンと不一致。差分を確認して UPDATE_GOLDEN=1 で更新する。\n--- got ---\n%s", got)
+	}
+}
+
+func TestBuildGoneOfferBreakdown(t *testing.T) {
+	src := scenario()
+	src.goneDetails = map[string][]GoneOffer{
+		"moppy|2026-09-23": {
+			{Name: "案件A", Category: "アプリ"},
+			{Name: "案件C", Category: "アプリ"},
+			{Name: "案件B", Category: ""},
+		},
+	}
+	r, err := Build(context.Background(), src, "2026-09-24", ts("2026-09-24 03:20:00"), 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := r.Sites[1]
+	if len(m.GoneCategories) != 2 {
+		t.Fatalf("GoneCategories = %+v", m.GoneCategories)
+	}
+	if m.GoneCategories[0].Category != "アプリ" || m.GoneCategories[0].Count != 2 || strings.Join(m.GoneCategories[0].Examples, ",") != "案件A,案件C" {
+		t.Errorf("アプリ = %+v", m.GoneCategories[0])
+	}
+	if m.GoneCategories[1].Category != "未分類" || m.GoneCategories[1].Count != 1 {
+		t.Errorf("未分類 = %+v", m.GoneCategories[1])
+	}
+	out := Render(r)
+	if !strings.Contains(out, "### 消えた案件の内訳（モッピー）") || !strings.Contains(out, "| アプリ | 2 | 案件A、案件C |") {
+		t.Errorf("消えた案件の内訳が出ていない:\n%s", out)
+	}
+	// hapitas は内訳未設定（0 件扱い）→ セクションを出さない
+	if strings.Contains(out, "消えた案件の内訳（ハピタス）") {
+		t.Error("内訳が無いサイトにセクションが出た")
+	}
+
+	src2 := scenario()
+	src2.goneDetailsErr = errors.New("timeout")
+	r2, err := Build(context.Background(), src2, "2026-09-24", ts("2026-09-24 03:20:00"), 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(r2.Warnings, "\n"), "モッピー: 消えた案件の内訳を取得できなかった") {
+		t.Errorf("警告が無い: %v", r2.Warnings)
+	}
+}
+
+func TestGroupGoneOffersLimitsExamplesAndSorts(t *testing.T) {
+	offers := []GoneOffer{
+		{Name: "え", Category: "X"}, {Name: "あ", Category: "X"}, {Name: "い", Category: "X"},
+		{Name: "う", Category: "X"}, {Name: "お", Category: "X"}, {Name: "か", Category: "X"},
+	}
+	got := groupGoneOffers(offers)
+	if len(got) != 1 || got[0].Count != 6 {
+		t.Fatalf("got = %+v", got)
+	}
+	want := []string{"あ", "い", "う", "え", "お"}
+	if len(got[0].Examples) != len(want) {
+		t.Fatalf("Examples = %v", got[0].Examples)
+	}
+	for i, w := range want {
+		if got[0].Examples[i] != w {
+			t.Errorf("Examples[%d] = %s, want %s", i, got[0].Examples[i], w)
+		}
 	}
 }
 
