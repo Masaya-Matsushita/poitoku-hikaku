@@ -59,7 +59,30 @@ type Source interface {
 	GoneOfferCount(ctx context.Context, siteID, prevDate string) (int, error)
 	// GoneOfferDetails は GoneOfferCount と同じ条件の案件の名前とカテゴリを名前順で返す（消えた案件の内訳用）。
 	GoneOfferDetails(ctx context.Context, siteID, prevDate string) ([]GoneOffer, error)
+	// RewardChanges は crawledOn に始まった区間のうち、直前の区間（valid_to が null でない最新）がある案件の
+	// 前後の還元額を返す（新規案件は含まない）。順序は問わない。
+	RewardChanges(ctx context.Context, siteID, crawledOn string) ([]RewardChange, error)
 }
+
+// RewardChange は 1 案件の還元額の変化。Points は数値化できなかった（% 還元など）場合 nil。
+type RewardChange struct {
+	Name       string
+	PrevRaw    string
+	NewRaw     string
+	PrevPoints *int
+	NewPoints  *int
+}
+
+// Diff はポイントの差（新 − 前）。どちらかが nil なら ok=false。
+func (c RewardChange) Diff() (diff int, ok bool) {
+	if c.PrevPoints == nil || c.NewPoints == nil {
+		return 0, false
+	}
+	return *c.NewPoints - *c.PrevPoints, true
+}
+
+// topChanges は変化の上位件数（Issue #21）。
+const topChanges = 5
 
 // GoneOffer は消えた案件（offers.last_seen_on = prevDate）の名前とカテゴリ。
 type GoneOffer struct {
@@ -100,6 +123,11 @@ type SiteDay struct {
 	ChurnKnown bool // NewOffers と GoneOffers を取得できたか
 	// GoneCategories は消えた案件のカテゴリ別内訳。ChurnKnown かつ GoneOffers > 0 の時だけ埋まる
 	GoneCategories []GoneCategory
+	// TopChanges は還元額が変わった案件の上位 topChanges 件（ポイント差の絶対値の大きい順）。ChangesKnown の時だけ意味を持つ
+	TopChanges      []RewardChange
+	ChangesTotal    int  // 還元額が変わった案件の数（新規を除く）
+	ChangesExcluded int  // そのうちポイント差を出せず上位の対象外にした件数
+	ChangesKnown    bool // RewardChanges を取得できたか
 }
 
 // ParsedRate は数値化率。案件 0 件なら 0。
@@ -200,6 +228,13 @@ func Build(ctx context.Context, src Source, date string, now time.Time, windowDa
 				r.Warnings = append(r.Warnings, fmt.Sprintf("%s: 還元額の変化件数を取得できなかった（%v）", s.Name, err))
 			} else {
 				d.Changed, d.ChangedKnown = ch, true
+			}
+			changes, err := src.RewardChanges(ctx, s.ID, date)
+			if err != nil {
+				r.Warnings = append(r.Warnings, fmt.Sprintf("%s: 還元額の変化の上位を取得できなかった（%v）", s.Name, err))
+			} else {
+				d.TopChanges, d.ChangesExcluded = rankChanges(changes)
+				d.ChangesTotal, d.ChangesKnown = len(changes), true
 			}
 			if d.PrevOffers >= 0 {
 				nw, err := src.NewOfferCount(ctx, s.ID, date)
@@ -328,6 +363,35 @@ func groupGoneOffers(offers []GoneOffer) []GoneCategory {
 	return out
 }
 
+// rankChanges はポイント差の絶対値が大きい順（同じなら案件名順）の上位 topChanges 件と、
+// ポイント差を出せず対象外にした件数を返す。
+func rankChanges(changes []RewardChange) (top []RewardChange, excluded int) {
+	for _, c := range changes {
+		if _, ok := c.Diff(); !ok {
+			excluded++
+			continue
+		}
+		top = append(top, c)
+	}
+	abs := func(c RewardChange) int {
+		d, _ := c.Diff()
+		if d < 0 {
+			return -d
+		}
+		return d
+	}
+	sort.Slice(top, func(i, j int) bool {
+		if ai, aj := abs(top[i]), abs(top[j]); ai != aj {
+			return ai > aj
+		}
+		return top[i].Name < top[j].Name
+	})
+	if len(top) > topChanges {
+		top = top[:topChanges]
+	}
+	return top, excluded
+}
+
 // churn は減少の警告に添える内訳（「、新規 5・消えた 31」）。取得できていなければ空。
 func churn(d SiteDay) string {
 	if !d.ChurnKnown {
@@ -400,6 +464,31 @@ func Render(r *Report) string {
 		}
 		w("\n")
 	}
+
+	for _, d := range r.Sites {
+		if !d.ChangesKnown {
+			continue
+		}
+		w("### 還元額の変化 上位 %d 件（%s）\n\n", topChanges, d.Site.Name)
+		if d.ChangesTotal == 0 {
+			w("変化なし\n\n")
+			continue
+		}
+		if len(d.TopChanges) > 0 {
+			w("| 案件名 | 前の還元額 | 新しい還元額 | ポイントの差 |\n")
+			w("|---|---:|---:|---:|\n")
+			for _, c := range d.TopChanges {
+				diff, _ := c.Diff()
+				w("| %s | %s | %s | %+d |\n", c.Name, c.PrevRaw, c.NewRaw, diff)
+			}
+			w("\n")
+		}
+		if d.ChangesExcluded > 0 {
+			w("対象外 %d 件\n\n", d.ChangesExcluded)
+		}
+	}
+	w("上位の表は、当日に還元額が変わった既存案件（新規を除く）をポイント差の絶対値の大きい順（同じなら案件名順）に並べたもの。" +
+		"前後どちらかがポイントに数値化できない案件（%% 還元など）は上位に含めず「対象外」に数える。桁違い・0 への急落など抽出の異常に気づくために見る。\n\n")
 
 	w("## KPI\n\n")
 	w("| KPI | 目標 | 直近 7 日 | 直近 %d 日 |\n", r.Month.Days)

@@ -42,6 +42,15 @@ func newReadServer(t *testing.T) (*httptest.Server, *[]string) {
 		case "/rest/v1/offer_snapshots":
 			q := r.URL.Query()
 			switch {
+			case strings.HasPrefix(q.Get("select"), "offer_id,reward_raw,reward_points,offers") && q.Get("offers.site_id") == "eq.moppy" && q.Get("valid_from") == "eq.2026-09-23":
+				w.Write([]byte(`[{"offer_id":"o1","reward_raw":"1,500P","reward_points":1500,"offers":{"name":"案件A"}},` +
+					`{"offer_id":"o2","reward_raw":"2%","reward_points":null,"offers":{"name":"案件B"}},` +
+					`{"offer_id":"o3","reward_raw":"300P","reward_points":300,"offers":{"name":"新規案件"}}]`))
+			case q.Get("select") == "offer_id,reward_raw,reward_points" && q.Get("valid_to") == "not.is.null":
+				// valid_to の新しい順。o1 は古い区間（800P）より新しい区間（1,000P）を採る
+				w.Write([]byte(`[{"offer_id":"o1","reward_raw":"1,000P","reward_points":1000},` +
+					`{"offer_id":"o2","reward_raw":"1,000P","reward_points":1000},` +
+					`{"offer_id":"o1","reward_raw":"800P","reward_points":800}]`))
 			case q.Get("offers.site_id") == "eq.moppy" && q.Get("valid_to") == "is.null":
 				w.Header().Set("Content-Range", "0-0/2")
 				w.Write([]byte(`[{"id":1}]`))
@@ -168,6 +177,37 @@ func TestGoneOfferDetails(t *testing.T) {
 	for _, want := range []string{"select=name%2Ccategory", "site_id=eq.moppy", "last_seen_on=eq.2026-09-22", "order=name.asc"} {
 		if !strings.Contains(q, want) {
 			t.Errorf("クエリに %q が無い: %s", want, q)
+		}
+	}
+}
+
+func TestRewardChanges(t *testing.T) {
+	srv, seen := newReadServer(t)
+	c, _ := New(srv.URL, "sb_secret_test")
+
+	got, err := c.RewardChanges(context.Background(), "moppy", "2026-09-23")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 新規案件（直前の区間なし）は含まれない
+	if len(got) != 2 {
+		t.Fatalf("got = %+v", got)
+	}
+	a, b := got[0], got[1]
+	if a.Name != "案件A" || a.PrevRaw != "1,000P" || a.NewRaw != "1,500P" || a.PrevPoints == nil || *a.PrevPoints != 1000 || a.NewPoints == nil || *a.NewPoints != 1500 {
+		t.Errorf("案件A = %+v", a)
+	}
+	if b.Name != "案件B" || b.NewPoints != nil || b.PrevPoints == nil {
+		t.Errorf("案件B = %+v", b)
+	}
+	for i, want := range [][]string{
+		{"/rest/v1/offer_snapshots?", "valid_from=eq.2026-09-23", "offers.site_id=eq.moppy", "offers%21inner%28name%2Csite_id%29", "order=id.asc", "limit=1000", "offset=0"},
+		{"/rest/v1/offer_snapshots?", "offer_id=in.%28o1%2Co2%2Co3%29", "valid_to=not.is.null", "order=valid_to.desc%2Cid.desc"},
+	} {
+		for _, w := range want {
+			if !strings.Contains((*seen)[i], w) {
+				t.Errorf("クエリ %d に %q が無い: %s", i, w, (*seen)[i])
+			}
 		}
 	}
 }

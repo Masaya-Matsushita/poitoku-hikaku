@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/Masaya-Matsushita/poitoku-hikaku/crawler/internal/report"
@@ -127,6 +128,97 @@ func (c *Client) GoneOfferDetails(ctx context.Context, siteID, prevDate string) 
 			g.Category = *r.Category
 		}
 		out = append(out, g)
+	}
+	return out, nil
+}
+
+// rewardChangePageSize は 1 回の取得行数。PostgREST の既定の上限（1000）に合わせる。
+const rewardChangePageSize = 1000
+
+// rewardChangeChunk は直前の区間を引く時に 1 リクエストへ入れる offer_id の数（URL を長くしすぎない）。
+const rewardChangeChunk = 100
+
+// getAll は limit / offset で全ページを読み、rows の各ページを handle に渡す。order は必須（ページ境界を安定させる）。
+func getAll[T any](ctx context.Context, c *Client, path string, q url.Values, handle func([]T)) error {
+	for offset := 0; ; offset += rewardChangePageSize {
+		qq := url.Values{}
+		for k, v := range q {
+			qq[k] = v
+		}
+		qq.Set("limit", fmt.Sprint(rewardChangePageSize))
+		qq.Set("offset", fmt.Sprint(offset))
+		var rows []T
+		if err := c.do(ctx, http.MethodGet, path, qq, nil, nil, &rows); err != nil {
+			return err
+		}
+		handle(rows)
+		if len(rows) < rewardChangePageSize {
+			return nil
+		}
+	}
+}
+
+// RewardChanges は crawledOn に始まった区間のうち、同じ案件に直前の区間（valid_to が null でない最新）があるものの
+// 前後の還元額を返す（report.Source）。新規案件（直前の区間が無い）は含まない。
+func (c *Client) RewardChanges(ctx context.Context, siteID, crawledOn string) ([]report.RewardChange, error) {
+	type current struct {
+		OfferID      string `json:"offer_id"`
+		RewardRaw    string `json:"reward_raw"`
+		RewardPoints *int   `json:"reward_points"`
+		Offers       struct {
+			Name string `json:"name"`
+		} `json:"offers"`
+	}
+	var cur []current
+	err := getAll(ctx, c, "offer_snapshots", url.Values{
+		"select":         {"offer_id,reward_raw,reward_points,offers!inner(name,site_id)"},
+		"valid_from":     {"eq." + crawledOn},
+		"offers.site_id": {"eq." + siteID},
+		"order":          {"id.asc"},
+	}, func(rows []current) { cur = append(cur, rows...) })
+	if err != nil {
+		return nil, err
+	}
+
+	type previous struct {
+		OfferID      string `json:"offer_id"`
+		RewardRaw    string `json:"reward_raw"`
+		RewardPoints *int   `json:"reward_points"`
+	}
+	prev := map[string]previous{} // offer_id → 直前の区間（valid_to の新しい順に読むので最初の 1 件）
+	for start := 0; start < len(cur); start += rewardChangeChunk {
+		end := min(start+rewardChangeChunk, len(cur))
+		ids := make([]string, 0, end-start)
+		for _, r := range cur[start:end] {
+			ids = append(ids, r.OfferID)
+		}
+		err := getAll(ctx, c, "offer_snapshots", url.Values{
+			"select":   {"offer_id,reward_raw,reward_points"},
+			"offer_id": {"in.(" + strings.Join(ids, ",") + ")"},
+			"valid_to": {"not.is.null"},
+			"order":    {"valid_to.desc,id.desc"},
+		}, func(rows []previous) {
+			for _, p := range rows {
+				if _, ok := prev[p.OfferID]; !ok {
+					prev[p.OfferID] = p
+				}
+			}
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	out := make([]report.RewardChange, 0, len(cur))
+	for _, r := range cur {
+		p, ok := prev[r.OfferID]
+		if !ok {
+			continue
+		}
+		out = append(out, report.RewardChange{
+			Name: r.Offers.Name, PrevRaw: p.RewardRaw, NewRaw: r.RewardRaw,
+			PrevPoints: p.RewardPoints, NewPoints: r.RewardPoints,
+		})
 	}
 	return out, nil
 }

@@ -24,7 +24,16 @@ type fakeSource struct {
 
 	goneDetails    map[string][]GoneOffer // "site|prevDate" → 消えた案件の名前・カテゴリ
 	goneDetailsErr error                  // GoneOfferDetails だけを失敗させる
+
+	rewardChanges    map[string][]RewardChange // "site|date" → 還元額の変化（順不同）
+	rewardChangesErr error                     // RewardChanges だけを失敗させる
 }
+
+func (f *fakeSource) RewardChanges(_ context.Context, siteID, date string) ([]RewardChange, error) {
+	return f.rewardChanges[siteID+"|"+date], f.rewardChangesErr
+}
+
+func intp(n int) *int { return &n }
 
 func (f *fakeSource) GoneOfferDetails(_ context.Context, siteID, prevDate string) ([]GoneOffer, error) {
 	return f.goneDetails[siteID+"|"+prevDate], f.goneDetailsErr
@@ -304,6 +313,82 @@ func TestBuildGoneOfferBreakdown(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(r2.Warnings, "\n"), "モッピー: 消えた案件の内訳を取得できなかった") {
 		t.Errorf("警告が無い: %v", r2.Warnings)
+	}
+}
+
+func TestRankChanges(t *testing.T) {
+	changes := []RewardChange{
+		{Name: "い", PrevRaw: "100P", NewRaw: "110P", PrevPoints: intp(100), NewPoints: intp(110)},
+		{Name: "あ", PrevRaw: "100P", NewRaw: "90P", PrevPoints: intp(100), NewPoints: intp(90)}, // -10：い(+10) と同差、名前順で あ が先
+		{Name: "う", PrevRaw: "5,000P", NewRaw: "0P", PrevPoints: intp(5000), NewPoints: intp(0)},
+		{Name: "え", PrevRaw: "1%", NewRaw: "2%"},
+		{Name: "お", PrevRaw: "1%", NewRaw: "100P", NewPoints: intp(100)},
+		{Name: "か", PrevRaw: "1P", NewRaw: "2P", PrevPoints: intp(1), NewPoints: intp(2)},
+		{Name: "き", PrevRaw: "1P", NewRaw: "3P", PrevPoints: intp(1), NewPoints: intp(3)},
+		{Name: "く", PrevRaw: "1P", NewRaw: "4P", PrevPoints: intp(1), NewPoints: intp(4)},
+	}
+	top, excluded := rankChanges(changes)
+	if excluded != 2 {
+		t.Errorf("excluded = %d, want 2", excluded)
+	}
+	var names []string
+	for _, c := range top {
+		names = append(names, c.Name)
+	}
+	if got := strings.Join(names, ","); got != "う,あ,い,く,き" {
+		t.Errorf("top = %s, want う,あ,い,く,き", got)
+	}
+}
+
+func TestRenderRewardChanges(t *testing.T) {
+	src := scenario()
+	src.rewardChanges = map[string][]RewardChange{
+		"moppy|2026-09-24": {
+			{Name: "案件A", PrevRaw: "1,000P", NewRaw: "1,500P", PrevPoints: intp(1000), NewPoints: intp(1500)},
+			{Name: "案件B", PrevRaw: "500P", NewRaw: "0P", PrevPoints: intp(500), NewPoints: intp(0)},
+			{Name: "案件C", PrevRaw: "1%", NewRaw: "2%"},
+		},
+		"hapitas|2026-09-24": {
+			{Name: "案件D", PrevRaw: "1%", NewRaw: "2%"},
+		},
+	}
+	r, err := Build(context.Background(), src, "2026-09-24", ts("2026-09-24 03:20:00"), 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := Render(r)
+	for _, want := range []string{
+		"### 還元額の変化 上位 5 件（モッピー）",
+		"| 案件A | 1,000P | 1,500P | +500 |\n| 案件B | 500P | 0P | -500 |",
+		"対象外 1 件",
+		"### 還元額の変化 上位 5 件（ハピタス）\n\n対象外 1 件",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("出力に %q が無い:\n%s", want, out)
+		}
+	}
+	if m := r.Sites[1]; m.ChangesTotal != 3 || m.ChangesExcluded != 1 || len(m.TopChanges) != 2 {
+		t.Errorf("moppy = %+v", m)
+	}
+
+	// 変化なし（0 件）
+	r, err = Build(context.Background(), scenario(), "2026-09-24", ts("2026-09-24 03:20:00"), 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(Render(r), "### 還元額の変化 上位 5 件（モッピー）\n\n変化なし\n") {
+		t.Error("0 件のサイトに「変化なし」が出ていない")
+	}
+
+	// 取得失敗は警告に出し、節を出さない
+	src = scenario()
+	src.rewardChangesErr = errors.New("timeout")
+	r, err = Build(context.Background(), src, "2026-09-24", ts("2026-09-24 03:20:00"), 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(r.Warnings, "\n"), "モッピー: 還元額の変化の上位を取得できなかった") || strings.Contains(Render(r), "### 還元額の変化") {
+		t.Errorf("取得失敗の扱いが不正: %v", r.Warnings)
 	}
 }
 
